@@ -1,0 +1,296 @@
+import java.util.Optional
+import java.util.logging.Logger
+import kotlin.jvm.optionals.getOrDefault
+
+enum class Importance {
+    IsRequired,
+    IsOptional
+}
+
+enum class Representation {
+    None,
+    Any,
+    Same,
+    Str,
+}
+
+public class Representator (val r: Representation, val s: String?) {
+    fun get(): Representation {
+        return this.r
+    }
+    fun get_str(): String {
+        return when (this.r) {
+            Representation.Str -> this.s!!
+            else -> throw Exception("No string representation for ${this.r}!")
+        }
+    }
+    companion object {
+        fun None() = Representator(Representation.None, null)
+        fun Any() = Representator(Representation.Any, null)
+        fun Same() = Representator(Representation.Same, null)
+        fun Str(s: String) = Representator(Representation.Str, s)
+    }
+}
+
+enum class SqlTokens(public val repr: Representator, public val allowedFollowers: Array<Pair<Array<SqlTokens>, Importance>>) {
+    WITH_ROLLUP(Representator.Str("WITH ROLLUP"), arrayOf()),
+    POSITION(Representator.None(), arrayOf()),
+    COMMA(Representator.Str(","), arrayOf()),
+    QUOTE(Representator.Str("'"), arrayOf()),
+    ANY_STR(Representator.Any(), arrayOf()){
+        private lateinit var stringBody: String
+        fun set(s: String) {stringBody = s}
+        fun get(): String {return stringBody}
+    },
+    ANY_STR_NEXT(Representator.None(), arrayOf(
+        Pair(arrayOf(COMMA), Importance.IsRequired),
+        Pair(arrayOf(ANY_STR), Importance.IsRequired),
+        Pair(arrayOf(ANY_STR_NEXT), Importance.IsOptional),
+    )),
+    ANY_STR_SEQ(Representator.None(), arrayOf(
+        Pair(arrayOf(ANY_STR), Importance.IsRequired),
+        Pair(arrayOf(ANY_STR_NEXT), Importance.IsOptional),
+    )),
+    QUOTED_STR(Representator.None(), arrayOf(
+        Pair(arrayOf(QUOTE), Importance.IsRequired),
+        Pair(arrayOf(ANY_STR), Importance.IsRequired),
+        Pair(arrayOf(QUOTE), Importance.IsRequired),
+    )),
+    EQUAL(Representator.Str("="), arrayOf()),
+    LESS(Representator.Str("<"), arrayOf()),
+    MORE(Representator.Str(">"), arrayOf()),
+    AND(Representator.Same(), arrayOf()),
+    OR(Representator.Same(), arrayOf()),
+    EXPR(Representator.None(), arrayOf(
+        Pair(arrayOf(ANY_STR, QUOTED_STR), Importance.IsRequired),
+        Pair(arrayOf(MORE,LESS,EQUAL), Importance.IsRequired),
+        Pair(arrayOf(ANY_STR, QUOTED_STR), Importance.IsRequired),
+    )),
+    EXPR_NEXT(Representator.None(), arrayOf(
+        Pair(arrayOf(AND,OR), Importance.IsRequired),
+        Pair(arrayOf(EXPR), Importance.IsRequired),
+        Pair(arrayOf(EXPR_NEXT), Importance.IsOptional),
+    )),
+    EXPR_SEQ(Representator.None(), arrayOf(
+        Pair(arrayOf(EXPR), Importance.IsRequired),
+        Pair(arrayOf(EXPR_NEXT), Importance.IsOptional),
+    )),
+    OFFSET(Representator.Str("OFFSET"), arrayOf()),
+    SC_LEFT(Representator.None(), arrayOf()),
+    SC_RIGHT(Representator.None(), arrayOf()),
+    DESC(Representator.Same(), arrayOf()),
+    ASC(Representator.Same(), arrayOf()),
+    AS(Representator.Same(), arrayOf()),
+    NUMBER(Representator.None(), arrayOf()),
+    COL_NAME(Representator.Any(), arrayOf()),
+    CHAR_SET_EXPR(Representator.Str("CHARACTER SET"), arrayOf(
+        Pair(arrayOf(ANY_STR), Importance.IsRequired),
+    )),
+    INTO_OUTFILE(Representator.Str("INTO OUTFILE"), arrayOf(
+        Pair(arrayOf(QUOTED_STR), Importance.IsRequired),
+        Pair(arrayOf(CHAR_SET_EXPR), Importance.IsOptional),
+        Pair(arrayOf(ANY_STR), Importance.IsRequired),
+    )),
+    VARNAME_EXPR(Representator.None(), arrayOf(
+        Pair(arrayOf(ANY_STR), Importance.IsRequired),
+        Pair(arrayOf(VARNAME_EXPR), Importance.IsOptional),
+    )),
+    INTO_DUMPFILE(Representator.Str("INTO DUMPFILE"), arrayOf(Pair(arrayOf(QUOTED_STR), Importance.IsRequired),)),
+    INTO_VARNAME(Representator.Str("INTO"), arrayOf(Pair(arrayOf(VARNAME_EXPR), Importance.IsRequired),)),
+    INTO_OPTION(Representator.None(), arrayOf(Pair(arrayOf(INTO_OUTFILE, INTO_DUMPFILE, INTO_VARNAME), Importance.IsRequired))),
+    RC_OFFSET_OPTVAL(
+        Representator.None(), arrayOf(
+            Pair(arrayOf(NUMBER), Importance.IsRequired),
+            Pair(arrayOf(COMMA), Importance.IsRequired),
+            )
+    ),
+    RC_OFFSET_RQ(Representator.None(), arrayOf(
+        Pair(arrayOf(NUMBER), Importance.IsRequired),
+        Pair(arrayOf(OFFSET), Importance.IsRequired),
+        Pair(arrayOf(NUMBER), Importance.IsRequired),
+        )),
+    RC_OFFSET_OPT(
+        Representator.None(), arrayOf(
+            Pair(arrayOf(RC_OFFSET_OPTVAL), Importance.IsOptional),
+            Pair(arrayOf(NUMBER), Importance.IsRequired),
+            )
+    ),
+    UPDATE(Representator.Same(), arrayOf()),
+    SHARE(Representator.Same(), arrayOf()),
+    NOWAIT(Representator.Same(), arrayOf()),
+    LOCK_SHARED_MODE(Representator.Str("LOCK IN SHARE MODE"), arrayOf()),
+    SKIP_LOCKED(Representator.Str("SKIP LOCKED"), arrayOf()),
+    OF(Representator.Same(), arrayOf(Pair(arrayOf(ANY_STR_SEQ), Importance.IsRequired))),//
+    FOR(Representator.Same(), arrayOf(
+        Pair(arrayOf(UPDATE, SHARE), Importance.IsRequired),
+        Pair(arrayOf(OF), Importance.IsOptional),
+        Pair(arrayOf(NOWAIT, SKIP_LOCKED), Importance.IsOptional),
+        Pair(arrayOf(LOCK_SHARED_MODE), Importance.IsOptional),
+    )),
+    LIMIT_EXPR(Representator.None(), arrayOf(
+        Pair(arrayOf(RC_OFFSET_RQ, RC_OFFSET_OPT), Importance.IsRequired),
+    )),
+    LIMIT(Representator.Same(), arrayOf(Pair(arrayOf(LIMIT_EXPR), Importance.IsRequired),)),
+    GROUP_BY_EXPR(
+        Representator.None(), arrayOf(
+            Pair(arrayOf(ANY_STR, EXPR_SEQ, POSITION), Importance.IsRequired),
+            Pair(arrayOf(GROUP_BY_EXPR), Importance.IsOptional),
+        )
+    ),
+    GROUP_BY(
+        Representator.Str("GROUP BY"), arrayOf(
+            Pair(arrayOf(GROUP_BY_EXPR), Importance.IsRequired),
+            Pair(arrayOf(WITH_ROLLUP), Importance.IsOptional))
+    ),
+    WHERE_CONDITION(Representator.None(), arrayOf(Pair(arrayOf(EXPR_SEQ), Importance.IsRequired))),
+    COUNT(Representator.Same(), arrayOf(
+        Pair(arrayOf(SC_LEFT), Importance.IsRequired),
+        Pair(arrayOf(ANY_STR), Importance.IsRequired),
+        Pair(arrayOf(SC_RIGHT), Importance.IsRequired),
+    )),
+    ORDER_BY_EXPR(
+        Representator.None(), arrayOf(
+            Pair(arrayOf(COL_NAME, COUNT, POSITION), Importance.IsRequired),
+            Pair(arrayOf(ASC, DESC), Importance.IsOptional),
+            Pair(arrayOf(ORDER_BY_EXPR), Importance.IsOptional),
+        )
+    ),
+    ORDER_BY(
+        Representator.Str("ORDER BY"), arrayOf(
+            Pair(arrayOf(ORDER_BY_EXPR), Importance.IsRequired),
+            Pair(arrayOf(WITH_ROLLUP), Importance.IsOptional),
+        )
+    ),
+    WINDOW_EXPR(
+        Representator.None(), arrayOf(
+            Pair(arrayOf(ANY_STR), Importance.IsRequired),
+            Pair(arrayOf(AS), Importance.IsRequired),
+            Pair(arrayOf(SC_LEFT), Importance.IsRequired),
+            Pair(arrayOf(ANY_STR), Importance.IsRequired),
+            Pair(arrayOf(SC_RIGHT), Importance.IsRequired),
+            Pair(arrayOf(WINDOW_EXPR), Importance.IsOptional),
+            )
+    ),
+    WINDOW(
+        Representator.Same(), arrayOf(
+            Pair(arrayOf(WINDOW_EXPR), Importance.IsRequired),
+            )
+    ),
+    HAVING(Representator.Same(), arrayOf(Pair(arrayOf(WHERE_CONDITION), Importance.IsRequired))),
+    WHERE(Representator.Same(), arrayOf(Pair(arrayOf(WHERE_CONDITION), Importance.IsRequired))),
+    PARTITION_LIST(Representator.Any(), arrayOf()),
+    PARTITION(Representator.Same(), arrayOf(Pair(arrayOf(PARTITION_LIST), Importance.IsRequired))),
+    FROM(Representator.Same(), arrayOf(
+        Pair(arrayOf(ANY_STR_SEQ), Importance.IsRequired),
+        Pair(arrayOf(PARTITION), Importance.IsOptional)
+    )),
+    SQL_CALC_FOUND_ROWS(Representator.Same(), arrayOf()),
+    SQL_NO_CACHE(Representator.Same(), arrayOf()),
+    SQL_BUFFER_RESULT(Representator.Same(), arrayOf()),
+    SQL_BIG_RESULT(Representator.Same(), arrayOf()),
+    SQL_SMALL_RESULT(Representator.Same(), arrayOf()),
+    HIGH_PRIORITY(Representator.Same(), arrayOf()),
+    DISTINCTROW(Representator.Same(), arrayOf()),
+    DISTINCT(Representator.Same(), arrayOf()),
+    ALL(Representator.Same(), arrayOf()),
+    SELECT(
+        Representator.Same(), arrayOf(
+            Pair(arrayOf(ALL, DISTINCT, DISTINCTROW), Importance.IsOptional),
+            Pair(arrayOf(HIGH_PRIORITY), Importance.IsOptional),
+            Pair(arrayOf(SQL_SMALL_RESULT), Importance.IsOptional),
+            Pair(arrayOf(SQL_BIG_RESULT), Importance.IsOptional),
+            Pair(arrayOf(SQL_BUFFER_RESULT), Importance.IsOptional),
+            Pair(arrayOf(SQL_NO_CACHE), Importance.IsOptional),
+            Pair(arrayOf(SQL_CALC_FOUND_ROWS), Importance.IsOptional),
+            Pair(arrayOf(ANY_STR_SEQ), Importance.IsRequired),
+            Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
+            Pair(arrayOf(FROM), Importance.IsOptional),
+            Pair(arrayOf(WHERE), Importance.IsOptional),
+            Pair(arrayOf(GROUP_BY), Importance.IsOptional),
+            Pair(arrayOf(HAVING), Importance.IsOptional),
+            Pair(arrayOf(WINDOW), Importance.IsOptional),
+            Pair(arrayOf(ORDER_BY), Importance.IsOptional),
+            Pair(arrayOf(LIMIT), Importance.IsOptional),
+            Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
+            Pair(arrayOf(FOR), Importance.IsOptional),
+            Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
+        ));
+    fun matchString(s: MutableList<String>): Boolean {
+        print("Try to find $this in ${s}... ")
+        return when(repr.r) {
+            Representation.None -> {
+                println("going further.")
+                this.matchFollowers(s)
+            }
+            Representation.Any -> {
+                val res = s[0].matches("\\w+?".toRegex())
+                return if(res) {
+                    println("${s[0]} detected as $this")
+                    s.removeFirst()
+                    this.matchFollowers(s)
+                } else {
+                    false
+                }
+            }
+            Representation.Same,  Representation.Str -> {
+                val passedString = s[0]
+                val thisName = when (repr.r) {
+                    Representation.Same -> this.toString()
+                    Representation.Str -> repr.get_str()
+                    else -> {
+                        throw Exception("Shouldn't reach: ${repr.r}")
+                    }
+                }
+                val equality = thisName.equals(passedString, true)
+                return if (equality) {
+                    println("$passedString == $thisName, $this detected")
+                    s.removeFirst()
+                    matchFollowers(s)
+                } else {
+                    println("none found.")
+                    false
+                }
+            }
+        }
+    }
+    fun matchFollowers(s: MutableList<String>): Boolean {
+        var mainres = true
+        for((followers, importance) in this.allowedFollowers) {
+            val realFollowers = followers.map{ f -> Optional.ofNullable(f).getOrDefault(this) }
+            println("    looking in ${s} for any of {${realFollowers.map { f -> f.toString() }} as follower for $this")
+            val fres = when(importance) {
+                Importance.IsRequired -> false
+                Importance.IsOptional -> true
+            }
+
+            val followersMatchResult = if (s.isNotEmpty()) {
+                realFollowers.any { f -> f.matchString(s) }
+            } else {
+                false
+            }
+
+            mainres = mainres && (followersMatchResult || fres)
+            if (!mainres) {
+                break
+            }
+        }
+        println("$this ${mainres} mathed by followers")
+        return mainres
+    }
+}
+
+
+fun main(args: Array<String>) {
+    println("Hello World!")
+    // Try adding program arguments via Run/Debug configuration.
+    // Learn more about running applications: https://www.jetbrains.com/help/idea/running-applications.html.
+    println("Program arguments: ${args.joinToString()}")
+
+    val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia";
+    var splittedQuery = queryString.split("( |\n|((?=,))|((?<=,))|((?='))|((?<=')))".toRegex())
+        .filter { ch -> ch.isNotEmpty() }
+        .toMutableList()
+    println(splittedQuery.toString())
+    val res = SqlTokens.SELECT.matchString(splittedQuery)
+    print("Result = $res")
+}
