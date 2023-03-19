@@ -1,5 +1,4 @@
 import java.util.Optional
-import java.util.logging.Logger
 import kotlin.jvm.optionals.getOrDefault
 
 enum class Importance {
@@ -13,6 +12,8 @@ enum class Representation {
     Same,
     Str,
 }
+
+fun Boolean.toInt() = if (this) 1 else 0
 
 public class Representator (val r: Representation, val s: String?) {
     fun get(): Representation {
@@ -215,25 +216,25 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
             Pair(arrayOf(FOR), Importance.IsOptional),
             Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
         ));
-    fun matchString(s: MutableList<String>): Boolean {
-        print("Try to find $this in ${s}... ")
+    fun matchString(s: List<String>, currentOffset: Int): Pair<Boolean, Int> {
+        val tokensRange = currentOffset until s.size
+        print("Try to find $this in ${s.slice(tokensRange)}... ")
         return when(repr.r) {
             Representation.None -> {
                 println("going further.")
-                this.matchFollowers(s)
+                this.matchFollowers(s, currentOffset)
             }
             Representation.Any -> {
-                val res = s[0].matches("\\w+?".toRegex())
+                val res = s[currentOffset].matches("\\w+?".toRegex())
                 return if(res) {
-                    println("${s[0]} detected as $this")
-                    s.removeFirst()
-                    this.matchFollowers(s)
+                    println("${s[currentOffset]} detected as $this")
+                    this.matchFollowers(s, currentOffset+1)
                 } else {
-                    false
+                    Pair(false, currentOffset)
                 }
             }
             Representation.Same,  Representation.Str -> {
-                val passedString = s[0]
+                val passedString = s[currentOffset]
                 val thisName = when (repr.r) {
                     Representation.Same -> this.toString()
                     Representation.Str -> repr.get_str()
@@ -244,38 +245,49 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
                 val equality = thisName.equals(passedString, true)
                 return if (equality) {
                     println("$passedString == $thisName, $this detected")
-                    s.removeFirst()
-                    matchFollowers(s)
+                    matchFollowers(s, currentOffset+1)
                 } else {
                     println("none found.")
-                    false
+                    Pair(false, currentOffset)
                 }
             }
         }
     }
-    fun matchFollowers(s: MutableList<String>): Boolean {
+    fun matchFollowers(s: List<String>, currentOffset: Int): Pair<Boolean, Int> {
         var mainres = true
+        var veryCurrentOffset = currentOffset
         for((followers, importance) in this.allowedFollowers) {
             val realFollowers = followers.map{ f -> Optional.ofNullable(f).getOrDefault(this) }
-            println("    looking in ${s} for any of {${realFollowers.map { f -> f.toString() }} as follower for $this")
+            val tokensRange = veryCurrentOffset until s.size
+            println("    looking in ${s.slice(tokensRange)} for any of {${realFollowers.map { f -> f.toString() }} as follower for $this. Offset = $veryCurrentOffset")
             val fres = when(importance) {
                 Importance.IsRequired -> false
                 Importance.IsOptional -> true
             }
 
             val followersMatchResult = if (s.isNotEmpty()) {
-                realFollowers.any { f -> f.matchString(s) }
+                var r = Pair(false, veryCurrentOffset)
+                for(f in realFollowers) {
+                    val ri = f.matchString(s, veryCurrentOffset)
+                    if (ri.first) {
+                        r = ri
+                        break
+                    }
+                }
+                r
             } else {
-                false
+                Pair(false, veryCurrentOffset)
             }
+            veryCurrentOffset = followersMatchResult.second
 
-            mainres = mainres && (followersMatchResult || fres)
+            mainres = mainres && (followersMatchResult.first || fres)
             if (!mainres) {
+                veryCurrentOffset = currentOffset
                 break
             }
         }
-        println("$this ${mainres} mathed by followers")
-        return mainres
+        println("$this ${mainres} matched by followers. veryCurrentOffset = $veryCurrentOffset")
+        return Pair(mainres, veryCurrentOffset)
     }
 }
 
@@ -286,11 +298,11 @@ fun main(args: Array<String>) {
     // Learn more about running applications: https://www.jetbrains.com/help/idea/running-applications.html.
     println("Program arguments: ${args.joinToString()}")
 
-    val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia";
+    val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia'";
     var splittedQuery = queryString.split("( |\n|((?=,))|((?<=,))|((?='))|((?<=')))".toRegex())
         .filter { ch -> ch.isNotEmpty() }
-        .toMutableList()
+        .toList()
     println(splittedQuery.toString())
-    val res = SqlTokens.SELECT.matchString(splittedQuery)
+    val res = SqlTokens.SELECT.matchString(splittedQuery, 0)
     print("Result = $res")
 }
