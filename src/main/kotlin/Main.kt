@@ -216,9 +216,16 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
             Pair(arrayOf(FOR), Importance.IsOptional),
             Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
         ));
+    private lateinit var childTokens: MutableList<SqlTokens>
+
+    fun addChild(t: SqlTokens) {
+        childTokens.add(t)
+    }
+
     fun matchString(s: List<String>, currentOffset: Int): Pair<Boolean, Int> {
         val tokensRange = currentOffset until s.size
         print("Try to find $this in ${s.slice(tokensRange)}... ")
+        if(s.size <= currentOffset) return Pair(false, currentOffset)
         return when(repr.r) {
             Representation.None -> {
                 println("going further.")
@@ -253,7 +260,7 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
             }
         }
     }
-    fun matchFollowers(s: List<String>, currentOffset: Int): Pair<Boolean, Int> {
+    private fun matchFollowers(s: List<String>, currentOffset: Int): Pair<Boolean, Int> {
         var mainres = true
         var veryCurrentOffset = currentOffset
         for((followers, importance) in this.allowedFollowers) {
@@ -298,7 +305,7 @@ fun main(args: Array<String>) {
     // Learn more about running applications: https://www.jetbrains.com/help/idea/running-applications.html.
     println("Program arguments: ${args.joinToString()}")
 
-    val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia'";
+    val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia";
     var splittedQuery = queryString.split("( |\n|((?=,))|((?<=,))|((?='))|((?<=')))".toRegex())
         .filter { ch -> ch.isNotEmpty() }
         .toList()
