@@ -289,6 +289,9 @@ class TokenKeeper(val token: SqlToken) {
         this.children = arrayListOf()
         var veryCurrentOffset = currentOffset
         for((followers, importance) in this.token.allowedFollowers) {
+            // Otherwise we'll get "Cannot invoke "SqlToken.toString()" because "f" is null"
+            // this shows us how well Kotlin is designed:
+            // it allows self-references inside enums but produces null values for this cases in runtime
             val realFollowers = followers.map{ f -> Optional.ofNullable(f).getOrDefault(this.token) }
             val tokensRange = veryCurrentOffset until s.size
             println("    looking in ${s.slice(tokensRange)} for any of {${realFollowers.map { f -> f.toString() }} as follower for $this. Offset = $veryCurrentOffset")
@@ -345,6 +348,7 @@ fun main(args: Array<String>) {
     if (res.second < splittedQuery.size - 1){
         throw Exception("Can't match string $queryString. Matched ${res.second} of ${splittedQuery.size} possible tokens")
     }
-    print("Result = $res")
+    println("Result = $res")
+    println("Query tree:")
     res.first.map { r -> r.printAsATree(0) }
 }
