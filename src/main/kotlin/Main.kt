@@ -1,4 +1,5 @@
 import java.util.Optional
+import java.util.stream.Stream
 import kotlin.jvm.optionals.getOrDefault
 
 enum class Importance {
@@ -38,11 +39,7 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
     POSITION(Representator.None(), arrayOf()),
     COMMA(Representator.Str(","), arrayOf()),
     QUOTE(Representator.Str("'"), arrayOf()),
-    ANY_STR(Representator.Any(), arrayOf()){
-        private lateinit var stringBody: String
-        fun set(s: String) {stringBody = s}
-        fun get(): String {return stringBody}
-    },
+    ANY_STR(Representator.Any(), arrayOf()),
     ANY_STR_NEXT(Representator.None(), arrayOf(
         Pair(arrayOf(COMMA), Importance.IsRequired),
         Pair(arrayOf(ANY_STR), Importance.IsRequired),
@@ -217,27 +214,50 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
             Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
         ));
     private lateinit var childTokens: MutableList<SqlTokens>
+    private lateinit var stringBody: String
+    fun set(s: String) {
+        println("Set $this to $s")
+        stringBody = s
+    }
+    fun get(): String {return stringBody}
 
     fun addChild(t: SqlTokens) {
         childTokens.add(t)
     }
+    fun getChildren(): Stream<SqlTokens> {
+        return childTokens.stream()
+    }
+    private fun toPrettyString(): String {
+        return when (this.repr.r) {
+            Representation.None -> "--${this}"
+            Representation.Any -> this.get()
+            Representation.Same -> this.toString()
+            Representation.Str -> this.repr.get_str()
+        }
+    }
+    fun printAsATree(offset: Int){
+        println(" ".repeat(offset) + this.toPrettyString())
+        for (c in this.childTokens) {
+            c.printAsATree(offset + 2)
+        }
+    }
 
-    fun matchString(s: List<String>, currentOffset: Int): Pair<Boolean, Int> {
+    fun matchString(s: List<String>, currentOffset: Int): Pair<Optional<SqlTokens>, Int> {
         val tokensRange = currentOffset until s.size
         print("Try to find $this in ${s.slice(tokensRange)}... ")
-        if(s.size <= currentOffset) return Pair(false, currentOffset)
+        if(s.size <= currentOffset) return Pair(Optional.empty(), currentOffset)
         return when(repr.r) {
             Representation.None -> {
                 println("going further.")
                 this.matchFollowers(s, currentOffset)
             }
             Representation.Any -> {
-                val res = s[currentOffset].matches("\\w+?".toRegex())
+                var res = s[currentOffset].matches("\\w+?".toRegex())
                 return if(res) {
                     println("${s[currentOffset]} detected as $this")
                     this.matchFollowers(s, currentOffset+1)
                 } else {
-                    Pair(false, currentOffset)
+                    Pair(Optional.empty(), currentOffset)
                 }
             }
             Representation.Same,  Representation.Str -> {
@@ -255,13 +275,14 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
                     matchFollowers(s, currentOffset+1)
                 } else {
                     println("none found.")
-                    Pair(false, currentOffset)
+                    Pair(Optional.empty(), currentOffset)
                 }
             }
         }
     }
-    private fun matchFollowers(s: List<String>, currentOffset: Int): Pair<Boolean, Int> {
-        var mainres = true
+    private fun matchFollowers(s: List<String>, currentOffset: Int): Pair<Optional<SqlTokens>, Int> {
+        var mainres: Optional<SqlTokens> = Optional.of(this)
+        this.childTokens = arrayListOf()
         var veryCurrentOffset = currentOffset
         for((followers, importance) in this.allowedFollowers) {
             val realFollowers = followers.map{ f -> Optional.ofNullable(f).getOrDefault(this) }
@@ -273,22 +294,29 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
             }
 
             val followersMatchResult = if (s.isNotEmpty()) {
-                var r = Pair(false, veryCurrentOffset)
+                var r: Pair<Optional<SqlTokens>, Int> = Pair(Optional.empty(), veryCurrentOffset)
                 for(f in realFollowers) {
+                    val vco = veryCurrentOffset
                     val ri = f.matchString(s, veryCurrentOffset)
-                    if (ri.first) {
+                    if (ri.first.isPresent) {
+                        val child = ri.first.get()
+                        if(child == ANY_STR) {
+                            child.set(s[vco])
+                        }
+                        this.addChild(child)
                         r = ri
                         break
                     }
                 }
                 r
             } else {
-                Pair(false, veryCurrentOffset)
+                Pair(Optional.empty(), veryCurrentOffset)
             }
             veryCurrentOffset = followersMatchResult.second
 
-            mainres = mainres && (followersMatchResult.first || fres)
-            if (!mainres) {
+            val keepDoing = mainres.isPresent && (followersMatchResult.first.isPresent || fres)
+            if (!keepDoing) {
+                mainres = Optional.empty()
                 veryCurrentOffset = currentOffset
                 break
             }
@@ -299,17 +327,22 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
 }
 
 
+class tokenKeeper {
+
+}
+
 fun main(args: Array<String>) {
     println("Hello World!")
     // Try adding program arguments via Run/Debug configuration.
     // Learn more about running applications: https://www.jetbrains.com/help/idea/running-applications.html.
     println("Program arguments: ${args.joinToString()}")
 
-    val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia";
-    var splittedQuery = queryString.split("( |\n|((?=,))|((?<=,))|((?='))|((?<=')))".toRegex())
+    val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia' and date > 0";
+    val splittedQuery = queryString.split("( |\n|((?=,))|((?<=,))|((?='))|((?<=')))".toRegex())
         .filter { ch -> ch.isNotEmpty() }
         .toList()
     println(splittedQuery.toString())
     val res = SqlTokens.SELECT.matchString(splittedQuery, 0)
     print("Result = $res")
+    res.first.map { r -> r.printAsATree(0) }
 }
