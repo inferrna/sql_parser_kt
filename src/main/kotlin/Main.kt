@@ -34,7 +34,7 @@ public class Representator (val r: Representation, val s: String?) {
     }
 }
 
-enum class SqlTokens(public val repr: Representator, public val allowedFollowers: Array<Pair<Array<SqlTokens>, Importance>>) {
+enum class SqlToken(public val repr: Representator, public val allowedFollowers: Array<Pair<Array<SqlToken>, Importance>>) {
     WITH_ROLLUP(Representator.Str("WITH ROLLUP"), arrayOf()),
     POSITION(Representator.None(), arrayOf()),
     COMMA(Representator.Str(","), arrayOf()),
@@ -213,7 +213,11 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
             Pair(arrayOf(FOR), Importance.IsOptional),
             Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
         ));
-    private lateinit var childTokens: MutableList<SqlTokens>
+}
+
+
+class TokenKeeper(val token: SqlToken) {
+    private lateinit var children: MutableList<TokenKeeper>
     private lateinit var stringBody: String
     fun set(s: String) {
         println("Set $this to $s")
@@ -221,32 +225,32 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
     }
     fun get(): String {return stringBody}
 
-    fun addChild(t: SqlTokens) {
-        childTokens.add(t)
+    fun addChild(t: TokenKeeper) {
+        children.add(t)
     }
-    fun getChildren(): Stream<SqlTokens> {
-        return childTokens.stream()
+    fun getChildren(): Stream<TokenKeeper> {
+        return children.stream()
     }
     private fun toPrettyString(): String {
-        return when (this.repr.r) {
-            Representation.None -> "--${this}"
+        return when (this.token.repr.r) {
+            Representation.None -> "--${this.token}"
             Representation.Any -> this.get()
-            Representation.Same -> this.toString()
-            Representation.Str -> this.repr.get_str()
+            Representation.Same -> token.toString()
+            Representation.Str -> token.repr.get_str()
         }
     }
     fun printAsATree(offset: Int){
         println(" ".repeat(offset) + this.toPrettyString())
-        for (c in this.childTokens) {
+        for (c in this.children) {
             c.printAsATree(offset + 2)
         }
     }
 
-    fun matchString(s: List<String>, currentOffset: Int): Pair<Optional<SqlTokens>, Int> {
+    fun matchString(s: List<String>, currentOffset: Int): Pair<Optional<TokenKeeper>, Int> {
         val tokensRange = currentOffset until s.size
-        print("Try to find $this in ${s.slice(tokensRange)}... ")
+        print("Try to find ${this.token} in ${s.slice(tokensRange)}... ")
         if(s.size <= currentOffset) return Pair(Optional.empty(), currentOffset)
-        return when(repr.r) {
+        return when(token.repr.r) {
             Representation.None -> {
                 println("going further.")
                 this.matchFollowers(s, currentOffset)
@@ -262,11 +266,11 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
             }
             Representation.Same,  Representation.Str -> {
                 val passedString = s[currentOffset]
-                val thisName = when (repr.r) {
-                    Representation.Same -> this.toString()
-                    Representation.Str -> repr.get_str()
+                val thisName = when (token.repr.r) {
+                    Representation.Same -> this.token.toString()
+                    Representation.Str -> token.repr.get_str()
                     else -> {
-                        throw Exception("Shouldn't reach: ${repr.r}")
+                        throw Exception("Shouldn't reach: ${token.repr.r}")
                     }
                 }
                 val equality = thisName.equals(passedString, true)
@@ -280,12 +284,12 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
             }
         }
     }
-    private fun matchFollowers(s: List<String>, currentOffset: Int): Pair<Optional<SqlTokens>, Int> {
-        var mainres: Optional<SqlTokens> = Optional.of(this)
-        this.childTokens = arrayListOf()
+    private fun matchFollowers(s: List<String>, currentOffset: Int): Pair<Optional<TokenKeeper>, Int> {
+        var mainres: Optional<TokenKeeper> = Optional.of(this)
+        this.children = arrayListOf()
         var veryCurrentOffset = currentOffset
-        for((followers, importance) in this.allowedFollowers) {
-            val realFollowers = followers.map{ f -> Optional.ofNullable(f).getOrDefault(this) }
+        for((followers, importance) in this.token.allowedFollowers) {
+            val realFollowers = followers.map{ f -> Optional.ofNullable(f).getOrDefault(this.token) }
             val tokensRange = veryCurrentOffset until s.size
             println("    looking in ${s.slice(tokensRange)} for any of {${realFollowers.map { f -> f.toString() }} as follower for $this. Offset = $veryCurrentOffset")
             val fres = when(importance) {
@@ -294,13 +298,13 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
             }
 
             val followersMatchResult = if (s.isNotEmpty()) {
-                var r: Pair<Optional<SqlTokens>, Int> = Pair(Optional.empty(), veryCurrentOffset)
+                var r: Pair<Optional<TokenKeeper>, Int> = Pair(Optional.empty(), veryCurrentOffset)
                 for(f in realFollowers) {
                     val vco = veryCurrentOffset
-                    val ri = f.matchString(s, veryCurrentOffset)
+                    val ri = TokenKeeper(f).matchString(s, veryCurrentOffset)
                     if (ri.first.isPresent) {
                         val child = ri.first.get()
-                        if(child == ANY_STR) {
+                        if(child.token == SqlToken.ANY_STR) {
                             child.set(s[vco])
                         }
                         this.addChild(child)
@@ -326,11 +330,6 @@ enum class SqlTokens(public val repr: Representator, public val allowedFollowers
     }
 }
 
-
-class tokenKeeper {
-
-}
-
 fun main(args: Array<String>) {
     println("Hello World!")
     // Try adding program arguments via Run/Debug configuration.
@@ -342,7 +341,10 @@ fun main(args: Array<String>) {
         .filter { ch -> ch.isNotEmpty() }
         .toList()
     println(splittedQuery.toString())
-    val res = SqlTokens.SELECT.matchString(splittedQuery, 0)
+    val res = TokenKeeper(SqlToken.SELECT).matchString(splittedQuery, 0)
+    if (res.second < splittedQuery.size - 1){
+        throw Exception("Can't match string $queryString. Matched ${res.second} of ${splittedQuery.size} possible tokens")
+    }
     print("Result = $res")
     res.first.map { r -> r.printAsATree(0) }
 }
