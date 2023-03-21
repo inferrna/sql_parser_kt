@@ -9,6 +9,7 @@ enum class Importance {
 
 enum class Representation {
     None,
+    Word,
     Any,
     Same,
     Str,
@@ -28,6 +29,7 @@ public class Representator (val r: Representation, val s: String?) {
     }
     companion object {
         fun None() = Representator(Representation.None, null)
+        fun Word() = Representator(Representation.Word, null)
         fun Any() = Representator(Representation.Any, null)
         fun Same() = Representator(Representation.Same, null)
         fun Str(s: String) = Representator(Representation.Str, s)
@@ -39,7 +41,8 @@ enum class SqlToken(public val repr: Representator, public val allowedFollowers:
     POSITION(Representator.None(), arrayOf()),
     COMMA(Representator.Str(","), arrayOf()),
     QUOTE(Representator.Str("'"), arrayOf()),
-    ANY_STR(Representator.Any(), arrayOf()),
+    ANY_STR(Representator.Word(), arrayOf()),
+    ANY_TOKEN(Representator.Any(), arrayOf()),
     ANY_STR_NEXT(Representator.None(), arrayOf(
         Pair(arrayOf(COMMA), Importance.IsRequired),
         Pair(arrayOf(ANY_STR), Importance.IsRequired),
@@ -49,11 +52,16 @@ enum class SqlToken(public val repr: Representator, public val allowedFollowers:
         Pair(arrayOf(ANY_STR), Importance.IsRequired),
         Pair(arrayOf(ANY_STR_NEXT), Importance.IsOptional),
     )),
+    ANY_TOKEN_SEQ(Representator.None(), arrayOf(
+        Pair(arrayOf(ANY_TOKEN), Importance.IsRequired),
+        Pair(arrayOf(ANY_TOKEN_SEQ), Importance.IsOptional),
+    )),
     QUOTED_STR(Representator.None(), arrayOf(
         Pair(arrayOf(QUOTE), Importance.IsRequired),
         Pair(arrayOf(ANY_STR), Importance.IsRequired),
         Pair(arrayOf(QUOTE), Importance.IsRequired),
     )),
+    WILDCARD(Representator.Str("*"), arrayOf()),
     EQUAL(Representator.Str("="), arrayOf()),
     LESS(Representator.Str("<"), arrayOf()),
     MORE(Representator.Str(">"), arrayOf()),
@@ -74,13 +82,13 @@ enum class SqlToken(public val repr: Representator, public val allowedFollowers:
         Pair(arrayOf(EXPR_NEXT), Importance.IsOptional),
     )),
     OFFSET(Representator.Str("OFFSET"), arrayOf()),
-    SC_LEFT(Representator.None(), arrayOf()),
-    SC_RIGHT(Representator.None(), arrayOf()),
+    SC_LEFT(Representator.Str("("), arrayOf()),
+    SC_RIGHT(Representator.Str(")"), arrayOf()),
     DESC(Representator.Same(), arrayOf()),
     ASC(Representator.Same(), arrayOf()),
     AS(Representator.Same(), arrayOf()),
     NUMBER(Representator.None(), arrayOf()),
-    COL_NAME(Representator.Any(), arrayOf()),
+    COL_NAME(Representator.Word(), arrayOf()),
     CHAR_SET_EXPR(Representator.Str("CHARACTER SET"), arrayOf(
         Pair(arrayOf(ANY_STR), Importance.IsRequired),
     )),
@@ -176,10 +184,15 @@ enum class SqlToken(public val repr: Representator, public val allowedFollowers:
     ),
     HAVING(Representator.Same(), arrayOf(Pair(arrayOf(WHERE_CONDITION), Importance.IsRequired))),
     WHERE(Representator.Same(), arrayOf(Pair(arrayOf(WHERE_CONDITION), Importance.IsRequired))),
-    PARTITION_LIST(Representator.Any(), arrayOf()),
+    SUB_SELECT(Representator.None(), arrayOf(
+        Pair(arrayOf(SC_LEFT), Importance.IsRequired),
+        Pair(arrayOf(ANY_TOKEN), Importance.IsRequired),  //Going deeper at this very point
+        Pair(arrayOf(SC_RIGHT), Importance.IsRequired),
+    )),
+    PARTITION_LIST(Representator.Word(), arrayOf()),
     PARTITION(Representator.Same(), arrayOf(Pair(arrayOf(PARTITION_LIST), Importance.IsRequired))),
     FROM(Representator.Same(), arrayOf(
-        Pair(arrayOf(ANY_STR_SEQ), Importance.IsRequired),
+        Pair(arrayOf(ANY_STR_SEQ, SUB_SELECT), Importance.IsRequired),
         Pair(arrayOf(PARTITION), Importance.IsOptional)
     )),
     SQL_CALC_FOUND_ROWS(Representator.Same(), arrayOf()),
@@ -200,7 +213,7 @@ enum class SqlToken(public val repr: Representator, public val allowedFollowers:
             Pair(arrayOf(SQL_BUFFER_RESULT), Importance.IsOptional),
             Pair(arrayOf(SQL_NO_CACHE), Importance.IsOptional),
             Pair(arrayOf(SQL_CALC_FOUND_ROWS), Importance.IsOptional),
-            Pair(arrayOf(ANY_STR_SEQ), Importance.IsRequired),
+            Pair(arrayOf(ANY_STR_SEQ, WILDCARD), Importance.IsRequired),
             Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
             Pair(arrayOf(FROM), Importance.IsOptional),
             Pair(arrayOf(WHERE), Importance.IsOptional),
@@ -212,8 +225,10 @@ enum class SqlToken(public val repr: Representator, public val allowedFollowers:
             Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
             Pair(arrayOf(FOR), Importance.IsOptional),
             Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
-        ));
+        ))
 }
+
+enum class SqlTokenNext()
 
 
 class TokenKeeper(val token: SqlToken) {
@@ -234,9 +249,10 @@ class TokenKeeper(val token: SqlToken) {
     private fun toPrettyString(): String {
         return when (this.token.repr.r) {
             Representation.None -> "--${this.token}"
-            Representation.Any -> this.get()
+            Representation.Word -> this.get()
             Representation.Same -> token.toString()
             Representation.Str -> token.repr.get_str()
+            Representation.Any -> throw Exception("No string representation for 'Any' token")
         }
     }
     fun printAsATree(offset: Int){
@@ -255,7 +271,7 @@ class TokenKeeper(val token: SqlToken) {
                 println("going further.")
                 this.matchFollowers(s, currentOffset)
             }
-            Representation.Any -> {
+            Representation.Word -> {
                 var res = s[currentOffset].matches("\\w+?".toRegex())
                 return if(res) {
                     println("${s[currentOffset]} detected as $this")
@@ -275,12 +291,16 @@ class TokenKeeper(val token: SqlToken) {
                 }
                 val equality = thisName.equals(passedString, true)
                 return if (equality) {
-                    println("$passedString == $thisName, $this detected")
+                    println("$passedString == $thisName, ${this.token} detected")
                     matchFollowers(s, currentOffset+1)
                 } else {
                     println("none found.")
                     Pair(Optional.empty(), currentOffset)
                 }
+            }
+            Representation.Any -> {
+                println("going further with Any with value ${s[currentOffset]}.")
+                TokenKeeper(SqlToken.valueOf(s[currentOffset])).matchString(s, currentOffset)
             }
         }
     }
@@ -294,7 +314,7 @@ class TokenKeeper(val token: SqlToken) {
             // it allows self-references inside enums but produces null values for this cases in runtime
             val realFollowers = followers.map{ f -> Optional.ofNullable(f).getOrDefault(this.token) }
             val tokensRange = veryCurrentOffset until s.size
-            println("    looking in ${s.slice(tokensRange)} for any of {${realFollowers.map { f -> f.toString() }} as follower for $this. Offset = $veryCurrentOffset")
+            println("    looking in ${s.slice(tokensRange)} for any of {${realFollowers.map { f -> f.toString() }} as follower for ${this.token}. Offset = $veryCurrentOffset")
             val fres = when(importance) {
                 Importance.IsRequired -> false
                 Importance.IsOptional -> true
@@ -328,13 +348,14 @@ class TokenKeeper(val token: SqlToken) {
                 break
             }
         }
-        println("$this ${mainres} matched by followers. veryCurrentOffset = $veryCurrentOffset")
+        println("${this.token} ${mainres} matched by followers. veryCurrentOffset = $veryCurrentOffset")
         return Pair(mainres, veryCurrentOffset)
     }
 }
 
 fun main(args: Array<String>) {
-    val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia' and date > 0";
+    //val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia' and date > 0";
+    val queryString = "SELECT name, date FROM ( SELECT * FROM ( SELECT * FROM tutorials_tbl WHERE name = 'Vasia' ) WHERE date > 0 ) WHERE name = 'Vasia' and date > 0";
     val splittedQuery = queryString.split("( |\n|((?=,))|((?<=,))|((?='))|((?<=')))".toRegex())
         .filter { ch -> ch.isNotEmpty() }
         .toList()
