@@ -228,9 +228,6 @@ enum class SqlToken(public val repr: Representator, public val allowedFollowers:
         ))
 }
 
-enum class SqlTokenNext()
-
-
 class TokenKeeper(val token: SqlToken) {
     private lateinit var children: MutableList<TokenKeeper>
     private lateinit var stringBody: String
@@ -268,7 +265,7 @@ class TokenKeeper(val token: SqlToken) {
         if(s.size <= currentOffset) return Pair(Optional.empty(), currentOffset)
         return when(token.repr.r) {
             Representation.None -> {
-                println("going further.")
+                println("going further with 'None' as $token.")
                 this.matchFollowers(s, currentOffset)
             }
             Representation.Word -> {
@@ -299,7 +296,7 @@ class TokenKeeper(val token: SqlToken) {
                 }
             }
             Representation.Any -> {
-                println("going further with Any with value ${s[currentOffset]}.")
+                println("going deeper with ${s[currentOffset]} as 'Any'.")
                 TokenKeeper(SqlToken.valueOf(s[currentOffset])).matchString(s, currentOffset)
             }
         }
