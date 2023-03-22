@@ -39,6 +39,8 @@ enum class SqlToken(public val repr: Representator) {
     WITH_ROLLUP(Representator.Str("WITH ROLLUP")),
     POSITION(Representator.None()),
     COMMA(Representator.Str(",")),
+    ESCAPE(Representator.Str("""\""")),
+    ESCAPED_SPECIAL(Representator.None()),
     QUOTE(Representator.Str("'")),
     ANY_WORD(Representator.Word()),
     ANY_TOKEN(Representator.Any()),
@@ -125,6 +127,11 @@ enum class SqlToken(public val repr: Representator) {
     )
 }
 val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = mapOf(
+    SqlToken.ESCAPED_SPECIAL to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ESCAPE), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COMMA, SqlToken.ESCAPE), Importance.IsRequired),
+        ),
     SqlToken.ANY_STR_NEXT to
             arrayOf(
             Pair(arrayOf(SqlToken.COMMA), Importance.IsRequired),
