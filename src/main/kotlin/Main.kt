@@ -9,7 +9,7 @@ enum class Importance {
 enum class Representation {
     None,
     Word,
-    Any,
+    CommonCharacter,
     Same,
     Str,
 }
@@ -29,8 +29,8 @@ public class Representator (val r: Representation, val s: String?) {
     companion object {
         fun None() = Representator(Representation.None, null)
         fun Word() = Representator(Representation.Word, null)
-        fun Any() = Representator(Representation.Any, null)
         fun Same() = Representator(Representation.Same, null)
+        fun CommonCharacter() = Representator(Representation.CommonCharacter, null)
         fun Str(s: String) = Representator(Representation.Str, s)
     }
 }
@@ -42,11 +42,11 @@ enum class SqlToken(public val repr: Representator) {
     ESCAPE(Representator.Str("""\""")),
     ESCAPED_SPECIAL(Representator.None()),
     QUOTE(Representator.Str("'")),
+    COMMON_CHARACTER(Representator.CommonCharacter()),
+    COMMON_STRING(Representator.None()),
     ANY_WORD(Representator.Word()),
-    ANY_TOKEN(Representator.Any()),
     ANY_STR_NEXT(Representator.None()),
     ANY_STR_SEQ(Representator.None()),
-    ANY_TOKEN_SEQ(Representator.None()),
     QUOTED_STR(Representator.None()),
     WILDCARD(Representator.Str("*")),
     EQUAL(Representator.Str("=")),
@@ -130,7 +130,12 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
     SqlToken.ESCAPED_SPECIAL to
             arrayOf(
             Pair(arrayOf(SqlToken.ESCAPE), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.COMMA, SqlToken.ESCAPE), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.QUOTE, SqlToken.ESCAPE), Importance.IsRequired),
+        ),
+    SqlToken.COMMON_STRING to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ESCAPED_SPECIAL, SqlToken.COMMON_CHARACTER), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COMMON_STRING), Importance.IsOptional),
         ),
     SqlToken.ANY_STR_NEXT to
             arrayOf(
@@ -143,15 +148,10 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
             Pair(arrayOf(SqlToken.ANY_STR_NEXT), Importance.IsOptional),
         ),
-    SqlToken.ANY_TOKEN_SEQ to
-            arrayOf(
-            Pair(arrayOf(SqlToken.ANY_TOKEN), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.ANY_TOKEN_SEQ), Importance.IsOptional),
-        ),
     SqlToken.QUOTED_STR to
             arrayOf(
             Pair(arrayOf(SqlToken.QUOTE), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COMMON_STRING), Importance.IsRequired),
             Pair(arrayOf(SqlToken.QUOTE), Importance.IsRequired),
         ),
     SqlToken.EXPR to
@@ -302,7 +302,7 @@ class TokenKeeper(val token: SqlToken) {
     private lateinit var children: MutableList<TokenKeeper>
     private lateinit var stringBody: String
     fun set(s: String) {
-        println("Set $this to $s")
+        println("Set ${this.token} to $s")
         stringBody = s
     }
     fun get(): String {return stringBody}
@@ -319,7 +319,7 @@ class TokenKeeper(val token: SqlToken) {
             Representation.Word -> this.get()
             Representation.Same -> token.toString()
             Representation.Str -> token.repr.get_str()
-            Representation.Any -> throw Exception("No string representation for 'Any' token")
+            Representation.CommonCharacter -> this.get()
         }
     }
     fun printAsATree(offset: Int){
@@ -329,26 +329,50 @@ class TokenKeeper(val token: SqlToken) {
         }
     }
 
-    fun matchString(s: List<String>, currentOffset: Int): Pair<Optional<TokenKeeper>, Int> {
-        val tokensRange = currentOffset until s.size
-        print("Try to find ${this.token} in ${s.slice(tokensRange)}... ")
-        if(s.size <= currentOffset) return Pair(Optional.empty(), currentOffset)
+    fun matchString(s: String, currentOffset: Int): Pair<Optional<TokenKeeper>, Int> {
+        val tokensRange = currentOffset until s.length
+        print("Try to find ${this.token} in ${s.substring(tokensRange)}... ")
+        if(s[currentOffset] == ' ') return matchString(s, currentOffset+1) //Token can't start with space
+        if(s.length <= currentOffset) return Pair(Optional.empty(), currentOffset)
+        var substring: String = ""
         return when(token.repr.r) {
             Representation.None -> {
                 println("going further with 'None' as $token.")
                 this.matchFollowers(s, currentOffset)
             }
-            Representation.Word -> {
-                var res = s[currentOffset].matches("\\w+?".toRegex())
-                return if(res) {
-                    println("${s[currentOffset]} detected as $this")
+            Representation.CommonCharacter -> {
+                val currentCharacter = s[currentOffset]
+                return if(!"""\'""".contains(currentCharacter)){
+                    println("$currentCharacter detected as ${this.token}")
+                    this.set(currentCharacter.toString())
                     this.matchFollowers(s, currentOffset+1)
                 } else {
                     Pair(Optional.empty(), currentOffset)
                 }
             }
+            Representation.Word -> {
+                var nextOffset = currentOffset+1
+                substring = s.substring(currentOffset until nextOffset)
+                val resInitial = substring.matches("\\w+?".toRegex())
+                var res = resInitial
+                while (nextOffset<s.length && res) {
+                    nextOffset += 1
+                    substring = s.substring(currentOffset until nextOffset)
+                    res = substring.matches("\\w+?".toRegex())
+                }
+
+                nextOffset -= 1
+                substring = substring.substring(0 until substring.length-1)
+
+                return if(resInitial) {
+                    println("$substring detected as ${this.token}")
+                    this.set(substring)
+                    this.matchFollowers(s, nextOffset)
+                } else {
+                    Pair(Optional.empty(), currentOffset)
+                }
+            }
             Representation.Same,  Representation.Str -> {
-                val passedString = s[currentOffset]
                 val thisName = when (token.repr.r) {
                     Representation.Same -> this.token.toString()
                     Representation.Str -> token.repr.get_str()
@@ -356,30 +380,29 @@ class TokenKeeper(val token: SqlToken) {
                         throw Exception("Shouldn't reach: ${token.repr.r}")
                     }
                 }
+                val endBound = Math.min(currentOffset + thisName.length, s.length)
+                val passedString = s.substring(currentOffset until endBound)
                 val equality = thisName.equals(passedString, true)
                 return if (equality) {
                     println("$passedString == $thisName, ${this.token} detected")
-                    matchFollowers(s, currentOffset+1)
+                    matchFollowers(s, currentOffset+thisName.length)
                 } else {
                     println("none found.")
                     Pair(Optional.empty(), currentOffset)
                 }
             }
-            Representation.Any -> {
-                println("going deeper with ${s[currentOffset]} as 'Any'.")
-                TokenKeeper(SqlToken.valueOf(s[currentOffset])).matchString(s, currentOffset)
-            }
         }
     }
-    private fun matchFollowers(s: List<String>, currentOffset: Int): Pair<Optional<TokenKeeper>, Int> {
+    private fun matchFollowers(s: String, currentOffset: Int): Pair<Optional<TokenKeeper>, Int> {
         var mainres: Optional<TokenKeeper> = Optional.of(this)
         this.children = arrayListOf()
         var veryCurrentOffset = currentOffset
         val thisFollowers = Optional.ofNullable(allowedFollowers[this.token]).orElse(arrayOf())
+        if(s[currentOffset] == ' ') return matchFollowers(s, currentOffset+1) //Token can't start with space
         for((followers, importance) in thisFollowers) {
 
-            val tokensRange = veryCurrentOffset until s.size
-            println("    looking in ${s.slice(tokensRange)} for any of {${followers.map { f -> f.toString() }} as follower for ${this.token}. Offset = $veryCurrentOffset")
+            val tokensRange = veryCurrentOffset until s.length
+            println("    looking in '${s.substring(tokensRange)}' for any of {${followers.map { f -> f.toString() }} as follower for ${this.token}. Offset = $veryCurrentOffset")
             val fres = when(importance) {
                 Importance.IsRequired -> false
                 Importance.IsOptional -> true
@@ -392,9 +415,9 @@ class TokenKeeper(val token: SqlToken) {
                     val ri = TokenKeeper(f).matchString(s, veryCurrentOffset)
                     if (ri.first.isPresent) {
                         val child = ri.first.get()
-                        if(child.token == SqlToken.ANY_WORD) {
-                            child.set(s[vco])
-                        }
+                        //if(child.token == SqlToken.ANY_WORD) {
+                        //    child.set(s[vco])
+                       //}
                         this.addChild(child)
                         r = ri
                         break
@@ -413,19 +436,19 @@ class TokenKeeper(val token: SqlToken) {
                 break
             }
         }
-        println("${this.token} ${mainres} matched by followers. veryCurrentOffset = $veryCurrentOffset")
+        println("${this.token} ${mainres.isPresent} matched by followers. veryCurrentOffset = $veryCurrentOffset")
         return Pair(mainres, veryCurrentOffset)
     }
 }
 
 fun main(args: Array<String>) {
     //val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia' and date > 0";
-    val queryString = "SELECT name, date FROM ( SELECT * FROM ( SELECT * FROM tutorials_tbl WHERE name = 'Vasia' ) WHERE date > 0 ) WHERE name = 'Vasia' and date > 0";
+    val queryString = """SELECT name, date FROM ( SELECT * FROM ( SELECT * FROM tutorials_tbl WHERE name = 'Vasia\'' ) WHERE date > 0 ) WHERE name = 'Vasia\\' and date > 0"""
     val splittedQuery = queryString.split("( |\n|((?=,))|((?<=,))|((?='))|((?<=')))".toRegex())
         .filter { ch -> ch.isNotEmpty() }
         .toList()
     println(splittedQuery.toString())
-    val res = TokenKeeper(SqlToken.SELECT).matchString(splittedQuery, 0)
+    val res = TokenKeeper(SqlToken.SELECT).matchString(queryString, 0)
     if (res.second < splittedQuery.size - 1){
         throw Exception("Can't match string $queryString. Matched ${res.second} of ${splittedQuery.size} possible tokens")
     }
