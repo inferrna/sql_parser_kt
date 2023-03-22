@@ -1,6 +1,5 @@
 import java.util.Optional
 import java.util.stream.Stream
-import kotlin.jvm.optionals.getOrDefault
 
 enum class Importance {
     IsRequired,
@@ -36,197 +35,261 @@ public class Representator (val r: Representation, val s: String?) {
     }
 }
 
-enum class SqlToken(public val repr: Representator, public val allowedFollowers: Array<Pair<Array<SqlToken>, Importance>>) {
-    WITH_ROLLUP(Representator.Str("WITH ROLLUP"), arrayOf()),
-    POSITION(Representator.None(), arrayOf()),
-    COMMA(Representator.Str(","), arrayOf()),
-    QUOTE(Representator.Str("'"), arrayOf()),
-    ANY_STR(Representator.Word(), arrayOf()),
-    ANY_TOKEN(Representator.Any(), arrayOf()),
-    ANY_STR_NEXT(Representator.None(), arrayOf(
-        Pair(arrayOf(COMMA), Importance.IsRequired),
-        Pair(arrayOf(ANY_STR), Importance.IsRequired),
-        Pair(arrayOf(ANY_STR_NEXT), Importance.IsOptional),
-    )),
-    ANY_STR_SEQ(Representator.None(), arrayOf(
-        Pair(arrayOf(ANY_STR), Importance.IsRequired),
-        Pair(arrayOf(ANY_STR_NEXT), Importance.IsOptional),
-    )),
-    ANY_TOKEN_SEQ(Representator.None(), arrayOf(
-        Pair(arrayOf(ANY_TOKEN), Importance.IsRequired),
-        Pair(arrayOf(ANY_TOKEN_SEQ), Importance.IsOptional),
-    )),
-    QUOTED_STR(Representator.None(), arrayOf(
-        Pair(arrayOf(QUOTE), Importance.IsRequired),
-        Pair(arrayOf(ANY_STR), Importance.IsRequired),
-        Pair(arrayOf(QUOTE), Importance.IsRequired),
-    )),
-    WILDCARD(Representator.Str("*"), arrayOf()),
-    EQUAL(Representator.Str("="), arrayOf()),
-    LESS(Representator.Str("<"), arrayOf()),
-    MORE(Representator.Str(">"), arrayOf()),
-    AND(Representator.Same(), arrayOf()),
-    OR(Representator.Same(), arrayOf()),
-    EXPR(Representator.None(), arrayOf(
-        Pair(arrayOf(ANY_STR, QUOTED_STR), Importance.IsRequired),
-        Pair(arrayOf(MORE,LESS,EQUAL), Importance.IsRequired),
-        Pair(arrayOf(ANY_STR, QUOTED_STR), Importance.IsRequired),
-    )),
-    EXPR_NEXT(Representator.None(), arrayOf(
-        Pair(arrayOf(AND,OR), Importance.IsRequired),
-        Pair(arrayOf(EXPR), Importance.IsRequired),
-        Pair(arrayOf(EXPR_NEXT), Importance.IsOptional),
-    )),
-    EXPR_SEQ(Representator.None(), arrayOf(
-        Pair(arrayOf(EXPR), Importance.IsRequired),
-        Pair(arrayOf(EXPR_NEXT), Importance.IsOptional),
-    )),
-    OFFSET(Representator.Str("OFFSET"), arrayOf()),
-    SC_LEFT(Representator.Str("("), arrayOf()),
-    SC_RIGHT(Representator.Str(")"), arrayOf()),
-    DESC(Representator.Same(), arrayOf()),
-    ASC(Representator.Same(), arrayOf()),
-    AS(Representator.Same(), arrayOf()),
-    NUMBER(Representator.None(), arrayOf()),
-    COL_NAME(Representator.Word(), arrayOf()),
-    CHAR_SET_EXPR(Representator.Str("CHARACTER SET"), arrayOf(
-        Pair(arrayOf(ANY_STR), Importance.IsRequired),
-    )),
-    INTO_OUTFILE(Representator.Str("INTO OUTFILE"), arrayOf(
-        Pair(arrayOf(QUOTED_STR), Importance.IsRequired),
-        Pair(arrayOf(CHAR_SET_EXPR), Importance.IsOptional),
-        Pair(arrayOf(ANY_STR), Importance.IsRequired),
-    )),
-    VARNAME_EXPR(Representator.None(), arrayOf(
-        Pair(arrayOf(ANY_STR), Importance.IsRequired),
-        Pair(arrayOf(VARNAME_EXPR), Importance.IsOptional),
-    )),
-    INTO_DUMPFILE(Representator.Str("INTO DUMPFILE"), arrayOf(Pair(arrayOf(QUOTED_STR), Importance.IsRequired),)),
-    INTO_VARNAME(Representator.Str("INTO"), arrayOf(Pair(arrayOf(VARNAME_EXPR), Importance.IsRequired),)),
-    INTO_OPTION(Representator.None(), arrayOf(Pair(arrayOf(INTO_OUTFILE, INTO_DUMPFILE, INTO_VARNAME), Importance.IsRequired))),
+enum class SqlToken(public val repr: Representator) {
+    WITH_ROLLUP(Representator.Str("WITH ROLLUP")),
+    POSITION(Representator.None()),
+    COMMA(Representator.Str(",")),
+    QUOTE(Representator.Str("'")),
+    ANY_WORD(Representator.Word()),
+    ANY_TOKEN(Representator.Any()),
+    ANY_STR_NEXT(Representator.None()),
+    ANY_STR_SEQ(Representator.None()),
+    ANY_TOKEN_SEQ(Representator.None()),
+    QUOTED_STR(Representator.None()),
+    WILDCARD(Representator.Str("*")),
+    EQUAL(Representator.Str("=")),
+    LESS(Representator.Str("<")),
+    MORE(Representator.Str(">")),
+    AND(Representator.Same()),
+    OR(Representator.Same()),
+    EXPR(Representator.None()),
+    EXPR_NEXT(Representator.None()),
+    EXPR_SEQ(Representator.None()),
+    OFFSET(Representator.Same()),
+    SC_LEFT(Representator.Str("(")),
+    SC_RIGHT(Representator.Str(")")),
+    DESC(Representator.Same()),
+    ASC(Representator.Same()),
+    AS(Representator.Same()),
+    NUMBER(Representator.None()),
+    COL_NAME(Representator.Word()),
+    CHAR_SET_EXPR(Representator.Str("CHARACTER SET")),
+    INTO_OUTFILE(Representator.Str("INTO OUTFILE")),
+    VARNAME_EXPR(Representator.None()),
+    INTO_DUMPFILE(Representator.Str("INTO DUMPFILE")),
+    INTO_VARNAME(Representator.Str("INTO")),
+    INTO_OPTION(Representator.None()),
     RC_OFFSET_OPTVAL(
-        Representator.None(), arrayOf(
-            Pair(arrayOf(NUMBER), Importance.IsRequired),
-            Pair(arrayOf(COMMA), Importance.IsRequired),
-            )
+        Representator.None()
     ),
-    RC_OFFSET_RQ(Representator.None(), arrayOf(
-        Pair(arrayOf(NUMBER), Importance.IsRequired),
-        Pair(arrayOf(OFFSET), Importance.IsRequired),
-        Pair(arrayOf(NUMBER), Importance.IsRequired),
-        )),
+    RC_OFFSET_RQ(Representator.None()),
     RC_OFFSET_OPT(
-        Representator.None(), arrayOf(
-            Pair(arrayOf(RC_OFFSET_OPTVAL), Importance.IsOptional),
-            Pair(arrayOf(NUMBER), Importance.IsRequired),
-            )
+        Representator.None()
     ),
-    UPDATE(Representator.Same(), arrayOf()),
-    SHARE(Representator.Same(), arrayOf()),
-    NOWAIT(Representator.Same(), arrayOf()),
-    LOCK_SHARED_MODE(Representator.Str("LOCK IN SHARE MODE"), arrayOf()),
-    SKIP_LOCKED(Representator.Str("SKIP LOCKED"), arrayOf()),
-    OF(Representator.Same(), arrayOf(Pair(arrayOf(ANY_STR_SEQ), Importance.IsRequired))),//
-    FOR(Representator.Same(), arrayOf(
-        Pair(arrayOf(UPDATE, SHARE), Importance.IsRequired),
-        Pair(arrayOf(OF), Importance.IsOptional),
-        Pair(arrayOf(NOWAIT, SKIP_LOCKED), Importance.IsOptional),
-        Pair(arrayOf(LOCK_SHARED_MODE), Importance.IsOptional),
-    )),
-    LIMIT_EXPR(Representator.None(), arrayOf(
-        Pair(arrayOf(RC_OFFSET_RQ, RC_OFFSET_OPT), Importance.IsRequired),
-    )),
-    LIMIT(Representator.Same(), arrayOf(Pair(arrayOf(LIMIT_EXPR), Importance.IsRequired),)),
+    UPDATE(Representator.Same()),
+    SHARE(Representator.Same()),
+    NOWAIT(Representator.Same()),
+    LOCK_SHARED_MODE(Representator.Str("LOCK IN SHARE MODE")),
+    SKIP_LOCKED(Representator.Str("SKIP LOCKED")),
+    OF(Representator.Same()),//
+    FOR(Representator.Same()),
+    LIMIT_EXPR(Representator.None()),
+    LIMIT(Representator.Same()),
     GROUP_BY_EXPR(
-        Representator.None(), arrayOf(
-            Pair(arrayOf(ANY_STR, EXPR_SEQ, POSITION), Importance.IsRequired),
-            Pair(arrayOf(GROUP_BY_EXPR), Importance.IsOptional),
-        )
+        Representator.None()
     ),
     GROUP_BY(
-        Representator.Str("GROUP BY"), arrayOf(
-            Pair(arrayOf(GROUP_BY_EXPR), Importance.IsRequired),
-            Pair(arrayOf(WITH_ROLLUP), Importance.IsOptional))
+        Representator.Str("GROUP BY")
     ),
-    WHERE_CONDITION(Representator.None(), arrayOf(Pair(arrayOf(EXPR_SEQ), Importance.IsRequired))),
-    COUNT(Representator.Same(), arrayOf(
-        Pair(arrayOf(SC_LEFT), Importance.IsRequired),
-        Pair(arrayOf(ANY_STR), Importance.IsRequired),
-        Pair(arrayOf(SC_RIGHT), Importance.IsRequired),
-    )),
+    WHERE_CONDITION(Representator.None()),
+    COUNT(Representator.Same()),
     ORDER_BY_EXPR(
-        Representator.None(), arrayOf(
-            Pair(arrayOf(COL_NAME, COUNT, POSITION), Importance.IsRequired),
-            Pair(arrayOf(ASC, DESC), Importance.IsOptional),
-            Pair(arrayOf(ORDER_BY_EXPR), Importance.IsOptional),
-        )
+        Representator.None()
     ),
     ORDER_BY(
-        Representator.Str("ORDER BY"), arrayOf(
-            Pair(arrayOf(ORDER_BY_EXPR), Importance.IsRequired),
-            Pair(arrayOf(WITH_ROLLUP), Importance.IsOptional),
-        )
+        Representator.Str("ORDER BY")
     ),
     WINDOW_EXPR(
-        Representator.None(), arrayOf(
-            Pair(arrayOf(ANY_STR), Importance.IsRequired),
-            Pair(arrayOf(AS), Importance.IsRequired),
-            Pair(arrayOf(SC_LEFT), Importance.IsRequired),
-            Pair(arrayOf(ANY_STR), Importance.IsRequired),
-            Pair(arrayOf(SC_RIGHT), Importance.IsRequired),
-            Pair(arrayOf(WINDOW_EXPR), Importance.IsOptional),
-            )
+        Representator.None()
     ),
     WINDOW(
-        Representator.Same(), arrayOf(
-            Pair(arrayOf(WINDOW_EXPR), Importance.IsRequired),
-            )
+        Representator.Same()
     ),
-    HAVING(Representator.Same(), arrayOf(Pair(arrayOf(WHERE_CONDITION), Importance.IsRequired))),
-    WHERE(Representator.Same(), arrayOf(Pair(arrayOf(WHERE_CONDITION), Importance.IsRequired))),
-    SUB_SELECT(Representator.None(), arrayOf(
-        Pair(arrayOf(SC_LEFT), Importance.IsRequired),
-        Pair(arrayOf(ANY_TOKEN), Importance.IsRequired),  //Going deeper at this very point
-        Pair(arrayOf(SC_RIGHT), Importance.IsRequired),
-    )),
-    PARTITION_LIST(Representator.Word(), arrayOf()),
-    PARTITION(Representator.Same(), arrayOf(Pair(arrayOf(PARTITION_LIST), Importance.IsRequired))),
-    FROM(Representator.Same(), arrayOf(
-        Pair(arrayOf(ANY_STR_SEQ, SUB_SELECT), Importance.IsRequired),
-        Pair(arrayOf(PARTITION), Importance.IsOptional)
-    )),
-    SQL_CALC_FOUND_ROWS(Representator.Same(), arrayOf()),
-    SQL_NO_CACHE(Representator.Same(), arrayOf()),
-    SQL_BUFFER_RESULT(Representator.Same(), arrayOf()),
-    SQL_BIG_RESULT(Representator.Same(), arrayOf()),
-    SQL_SMALL_RESULT(Representator.Same(), arrayOf()),
-    HIGH_PRIORITY(Representator.Same(), arrayOf()),
-    DISTINCTROW(Representator.Same(), arrayOf()),
-    DISTINCT(Representator.Same(), arrayOf()),
-    ALL(Representator.Same(), arrayOf()),
+    HAVING(Representator.Same()),
+    WHERE(Representator.Same()),
+    SUB_SELECT(Representator.None()),
+    PARTITION_LIST(Representator.Word()),
+    PARTITION(Representator.Same()),
+    FROM(Representator.Same()),
+    SQL_CALC_FOUND_ROWS(Representator.Same()),
+    SQL_NO_CACHE(Representator.Same()),
+    SQL_BUFFER_RESULT(Representator.Same()),
+    SQL_BIG_RESULT(Representator.Same()),
+    SQL_SMALL_RESULT(Representator.Same()),
+    HIGH_PRIORITY(Representator.Same()),
+    DISTINCTROW(Representator.Same()),
+    DISTINCT(Representator.Same()),
+    ALL(Representator.Same()),
     SELECT(
-        Representator.Same(), arrayOf(
-            Pair(arrayOf(ALL, DISTINCT, DISTINCTROW), Importance.IsOptional),
-            Pair(arrayOf(HIGH_PRIORITY), Importance.IsOptional),
-            Pair(arrayOf(SQL_SMALL_RESULT), Importance.IsOptional),
-            Pair(arrayOf(SQL_BIG_RESULT), Importance.IsOptional),
-            Pair(arrayOf(SQL_BUFFER_RESULT), Importance.IsOptional),
-            Pair(arrayOf(SQL_NO_CACHE), Importance.IsOptional),
-            Pair(arrayOf(SQL_CALC_FOUND_ROWS), Importance.IsOptional),
-            Pair(arrayOf(ANY_STR_SEQ, WILDCARD), Importance.IsRequired),
-            Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
-            Pair(arrayOf(FROM), Importance.IsOptional),
-            Pair(arrayOf(WHERE), Importance.IsOptional),
-            Pair(arrayOf(GROUP_BY), Importance.IsOptional),
-            Pair(arrayOf(HAVING), Importance.IsOptional),
-            Pair(arrayOf(WINDOW), Importance.IsOptional),
-            Pair(arrayOf(ORDER_BY), Importance.IsOptional),
-            Pair(arrayOf(LIMIT), Importance.IsOptional),
-            Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
-            Pair(arrayOf(FOR), Importance.IsOptional),
-            Pair(arrayOf(INTO_OPTION), Importance.IsOptional),
-        ))
+        Representator.Same()
+    )
 }
+val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = mapOf(
+    SqlToken.ANY_STR_NEXT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.COMMA), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ANY_STR_NEXT), Importance.IsOptional),
+        ),
+    SqlToken.ANY_STR_SEQ to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ANY_STR_NEXT), Importance.IsOptional),
+        ),
+    SqlToken.ANY_TOKEN_SEQ to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ANY_TOKEN), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ANY_TOKEN_SEQ), Importance.IsOptional),
+        ),
+    SqlToken.QUOTED_STR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.QUOTE), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.QUOTE), Importance.IsRequired),
+        ),
+    SqlToken.EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ANY_WORD, SqlToken.QUOTED_STR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.MORE,SqlToken.LESS,SqlToken.EQUAL), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ANY_WORD, SqlToken.QUOTED_STR), Importance.IsRequired),
+        ),
+    SqlToken.EXPR_NEXT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.AND,SqlToken.OR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.EXPR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.EXPR_NEXT), Importance.IsOptional),
+        ),
+    SqlToken.EXPR_SEQ to
+            arrayOf(
+            Pair(arrayOf(SqlToken.EXPR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.EXPR_NEXT), Importance.IsOptional),
+        ),
+    SqlToken.CHAR_SET_EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+        ),
+    SqlToken.INTO_OUTFILE to
+        arrayOf(
+            Pair(arrayOf(SqlToken.QUOTED_STR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.CHAR_SET_EXPR), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+        ),
+    SqlToken.VARNAME_EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.VARNAME_EXPR), Importance.IsOptional),
+        ),
+    SqlToken.INTO_DUMPFILE to arrayOf(Pair(arrayOf(SqlToken.QUOTED_STR), Importance.IsRequired),),
+    SqlToken.INTO_VARNAME to arrayOf(Pair(arrayOf(SqlToken.VARNAME_EXPR), Importance.IsRequired),),
+    SqlToken.INTO_OPTION to arrayOf(Pair(arrayOf(SqlToken.INTO_OUTFILE, SqlToken.INTO_DUMPFILE, SqlToken.INTO_VARNAME), Importance.IsRequired)),
+    SqlToken.RC_OFFSET_OPTVAL to
+            arrayOf(
+            Pair(arrayOf(SqlToken.NUMBER), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COMMA), Importance.IsRequired),
+            ),
+    SqlToken.RC_OFFSET_RQ to
+            arrayOf(
+            Pair(arrayOf(SqlToken.NUMBER), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.OFFSET), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.NUMBER), Importance.IsRequired),
+            ),
+    SqlToken.RC_OFFSET_OPT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.RC_OFFSET_OPTVAL), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.NUMBER), Importance.IsRequired),
+            ),
+    SqlToken.OF to arrayOf(Pair(arrayOf(SqlToken.ANY_STR_SEQ), Importance.IsRequired)),
+    SqlToken.LESS to arrayOf(Pair(arrayOf(SqlToken.EQUAL), Importance.IsOptional)),
+    SqlToken.MORE to arrayOf(Pair(arrayOf(SqlToken.EQUAL), Importance.IsOptional)),
+    SqlToken.FOR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.UPDATE, SqlToken.SHARE), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.OF), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.NOWAIT, SqlToken.SKIP_LOCKED), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.LOCK_SHARED_MODE), Importance.IsOptional),
+        ),
+    SqlToken.LIMIT_EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.RC_OFFSET_RQ, SqlToken.RC_OFFSET_OPT), Importance.IsRequired),
+        ),
+    SqlToken.LIMIT to arrayOf(Pair(arrayOf(SqlToken.LIMIT_EXPR), Importance.IsRequired),),
+    SqlToken.GROUP_BY_EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ANY_WORD, SqlToken.EXPR_SEQ, SqlToken.POSITION), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.GROUP_BY_EXPR), Importance.IsOptional),
+        ),
+    SqlToken.GROUP_BY to
+            arrayOf(
+            Pair(arrayOf(SqlToken.GROUP_BY_EXPR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.WITH_ROLLUP), Importance.IsOptional)),
+    SqlToken.WHERE_CONDITION to arrayOf(Pair(arrayOf(SqlToken.EXPR_SEQ), Importance.IsRequired)),
+    SqlToken.COUNT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
+        ),
+    SqlToken.ORDER_BY_EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.COL_NAME, SqlToken.COUNT, SqlToken.POSITION), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ASC, SqlToken.DESC), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.ORDER_BY_EXPR), Importance.IsOptional),
+        ),
+    SqlToken.ORDER_BY to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ORDER_BY_EXPR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.WITH_ROLLUP), Importance.IsOptional),
+        ),
+    SqlToken.WINDOW_EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.AS), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.WINDOW_EXPR), Importance.IsOptional),
+            ),
+    SqlToken.WINDOW to
+            arrayOf(
+            Pair(arrayOf(SqlToken.WINDOW_EXPR), Importance.IsRequired),
+            ),
+    SqlToken.HAVING to arrayOf(Pair(arrayOf(SqlToken.WHERE_CONDITION), Importance.IsRequired)),
+    SqlToken.WHERE to arrayOf(Pair(arrayOf(SqlToken.WHERE_CONDITION), Importance.IsRequired)),
+    SqlToken.SUB_SELECT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.SELECT), Importance.IsRequired),  //Going deeper at this very point
+            Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
+        ),
+    SqlToken.PARTITION_LIST to arrayOf(),
+    SqlToken.PARTITION to arrayOf(Pair(arrayOf(SqlToken.PARTITION_LIST), Importance.IsRequired)),
+    SqlToken.FROM to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ANY_STR_SEQ, SqlToken.SUB_SELECT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.PARTITION), Importance.IsOptional)
+        ),
+    SqlToken.SELECT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ALL, SqlToken.DISTINCT, SqlToken.DISTINCTROW), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.HIGH_PRIORITY), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.SQL_SMALL_RESULT), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.SQL_BIG_RESULT), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.SQL_BUFFER_RESULT), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.SQL_NO_CACHE), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.SQL_CALC_FOUND_ROWS), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.ANY_STR_SEQ, SqlToken.WILDCARD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.INTO_OPTION), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.FROM), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.WHERE), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.GROUP_BY), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.HAVING), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.WINDOW), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.ORDER_BY), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.LIMIT), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.INTO_OPTION), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.FOR), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.INTO_OPTION), Importance.IsOptional),)
+)
 
 class TokenKeeper(val token: SqlToken) {
     private lateinit var children: MutableList<TokenKeeper>
@@ -305,13 +368,11 @@ class TokenKeeper(val token: SqlToken) {
         var mainres: Optional<TokenKeeper> = Optional.of(this)
         this.children = arrayListOf()
         var veryCurrentOffset = currentOffset
-        for((followers, importance) in this.token.allowedFollowers) {
-            // Otherwise we'll get "Cannot invoke "SqlToken.toString()" because "f" is null"
-            // this shows us how well Kotlin is designed:
-            // it allows self-references inside enums but produces null values for this cases in runtime
-            val realFollowers = followers.map{ f -> Optional.ofNullable(f).getOrDefault(this.token) }
+        val thisFollowers = Optional.ofNullable(allowedFollowers[this.token]).orElse(arrayOf())
+        for((followers, importance) in thisFollowers) {
+
             val tokensRange = veryCurrentOffset until s.size
-            println("    looking in ${s.slice(tokensRange)} for any of {${realFollowers.map { f -> f.toString() }} as follower for ${this.token}. Offset = $veryCurrentOffset")
+            println("    looking in ${s.slice(tokensRange)} for any of {${followers.map { f -> f.toString() }} as follower for ${this.token}. Offset = $veryCurrentOffset")
             val fres = when(importance) {
                 Importance.IsRequired -> false
                 Importance.IsOptional -> true
@@ -319,12 +380,12 @@ class TokenKeeper(val token: SqlToken) {
 
             val followersMatchResult = if (s.isNotEmpty()) {
                 var r: Pair<Optional<TokenKeeper>, Int> = Pair(Optional.empty(), veryCurrentOffset)
-                for(f in realFollowers) {
+                for(f in followers) {
                     val vco = veryCurrentOffset
                     val ri = TokenKeeper(f).matchString(s, veryCurrentOffset)
                     if (ri.first.isPresent) {
                         val child = ri.first.get()
-                        if(child.token == SqlToken.ANY_STR) {
+                        if(child.token == SqlToken.ANY_WORD) {
                             child.set(s[vco])
                         }
                         this.addChild(child)
