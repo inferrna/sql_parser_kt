@@ -12,6 +12,7 @@ enum class Representation {
     CommonCharacter,
     Same,
     Str,
+    Number,
 }
 
 fun Boolean.toInt() = if (this) 1 else 0
@@ -29,6 +30,7 @@ public class Representator (val r: Representation, val s: String?) {
     companion object {
         fun None() = Representator(Representation.None, null)
         fun Word() = Representator(Representation.Word, null)
+        fun Number() = Representator(Representation.Number, null)
         fun Same() = Representator(Representation.Same, null)
         fun CommonCharacter() = Representator(Representation.CommonCharacter, null)
         fun Str(s: String) = Representator(Representation.Str, s)
@@ -37,34 +39,51 @@ public class Representator (val r: Representation, val s: String?) {
 
 enum class SqlToken(public val repr: Representator) {
     WITH_ROLLUP(Representator.Str("WITH ROLLUP")),
-    POSITION(Representator.None()),
+    POSITION(Representator.Number()),
     COMMA(Representator.Str(",")),
     ESCAPE(Representator.Str("""\""")),
     ESCAPED_SPECIAL(Representator.None()),
     QUOTE(Representator.Str("'")),
     COMMON_CHARACTER(Representator.CommonCharacter()),
     COMMON_STRING(Representator.None()),
+    COUNT(Representator.Same()),
+    MAX(Representator.None()),
+    MIN(Representator.None()),
+    SUM(Representator.None()),
+    AVG(Representator.None()),
+    SCOPED_COL_NAME(Representator.None()),
+    COL_NAME(Representator.Word()),
+    COL_NAME_EXPR(Representator.None()),
+    COL_NAME_NEXT(Representator.None()),
+    COL_NAME_SEQ(Representator.None()),
+    TABLE_NAME(Representator.Word()),
+    TABLE_NAME_NEXT(Representator.None()),
+    TABLE_NAME_SEQ(Representator.None()),
     ANY_WORD(Representator.Word()),
-    ANY_STR_NEXT(Representator.None()),
-    ANY_STR_SEQ(Representator.None()),
+    POSITION_NEXT(Representator.None()),
+    POSITION_SEQ(Representator.None()),
     QUOTED_STR(Representator.None()),
     WILDCARD(Representator.Str("*")),
     EQUAL(Representator.Str("=")),
     LESS(Representator.Str("<")),
+    LESS_EQ(Representator.Str("<=")),
     MORE(Representator.Str(">")),
+    MORE_EQ(Representator.Str(">=")),
     AND(Representator.Same()),
     OR(Representator.Same()),
+    EXPR_PART(Representator.None()),
     EXPR(Representator.None()),
     EXPR_NEXT(Representator.None()),
     EXPR_SEQ(Representator.None()),
+    CALC_EXPR(Representator.None()),
     OFFSET(Representator.Same()),
     SC_LEFT(Representator.Str("(")),
     SC_RIGHT(Representator.Str(")")),
     DESC(Representator.Same()),
     ASC(Representator.Same()),
+    AS_EXPR(Representator.None()),
     AS(Representator.Same()),
-    NUMBER(Representator.None()),
-    COL_NAME(Representator.Word()),
+    NUMBER(Representator.Number()),
     CHAR_SET_EXPR(Representator.Str("CHARACTER SET")),
     INTO_OUTFILE(Representator.Str("INTO OUTFILE")),
     VARNAME_EXPR(Representator.None()),
@@ -94,7 +113,6 @@ enum class SqlToken(public val repr: Representator) {
         Representator.Str("GROUP BY")
     ),
     WHERE_CONDITION(Representator.None()),
-    COUNT(Representator.Same()),
     ORDER_BY_EXPR(
         Representator.None()
     ),
@@ -137,16 +155,43 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             Pair(arrayOf(SqlToken.ESCAPED_SPECIAL, SqlToken.COMMON_CHARACTER), Importance.IsRequired),
             Pair(arrayOf(SqlToken.COMMON_STRING), Importance.IsOptional),
         ),
-    SqlToken.ANY_STR_NEXT to
+    SqlToken.COL_NAME_EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.COL_NAME), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.AS_EXPR), Importance.IsOptional),
+        ),
+    SqlToken.COL_NAME_NEXT to
             arrayOf(
             Pair(arrayOf(SqlToken.COMMA), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.ANY_STR_NEXT), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.COL_NAME_EXPR, SqlToken.EXPR_PART), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COL_NAME_NEXT), Importance.IsOptional),
         ),
-    SqlToken.ANY_STR_SEQ to
+    SqlToken.COL_NAME_SEQ to
             arrayOf(
-            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.ANY_STR_NEXT), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.COL_NAME_EXPR, SqlToken.EXPR_PART), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COL_NAME_NEXT), Importance.IsOptional),
+        ),
+    SqlToken.TABLE_NAME_NEXT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.COMMA), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.TABLE_NAME, SqlToken.EXPR_PART), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.TABLE_NAME_NEXT), Importance.IsOptional),
+        ),
+    SqlToken.TABLE_NAME_SEQ to
+            arrayOf(
+            Pair(arrayOf(SqlToken.TABLE_NAME), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.TABLE_NAME_NEXT), Importance.IsOptional),
+        ),
+    SqlToken.POSITION_NEXT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.COMMA), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.POSITION), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.POSITION_NEXT), Importance.IsOptional),
+        ),
+    SqlToken.POSITION_SEQ to
+            arrayOf(
+            Pair(arrayOf(SqlToken.POSITION), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.POSITION_NEXT), Importance.IsOptional),
         ),
     SqlToken.QUOTED_STR to
             arrayOf(
@@ -154,11 +199,20 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             Pair(arrayOf(SqlToken.COMMON_STRING), Importance.IsRequired),
             Pair(arrayOf(SqlToken.QUOTE), Importance.IsRequired),
         ),
+    SqlToken.EXPR_PART to
+            arrayOf(
+                Pair(arrayOf(SqlToken.NUMBER, SqlToken.COL_NAME, SqlToken.QUOTED_STR, SqlToken.CALC_EXPR), Importance.IsRequired),
+            ),
     SqlToken.EXPR to
             arrayOf(
-            Pair(arrayOf(SqlToken.ANY_WORD, SqlToken.QUOTED_STR), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.MORE,SqlToken.LESS,SqlToken.EQUAL), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.ANY_WORD, SqlToken.QUOTED_STR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.EXPR_PART), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.MORE_EQ,SqlToken.LESS_EQ,SqlToken.MORE,SqlToken.LESS,SqlToken.EQUAL), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.EXPR_PART), Importance.IsRequired),
+        ),
+    SqlToken.AS_EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.AS), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
         ),
     SqlToken.EXPR_NEXT to
             arrayOf(
@@ -205,7 +259,7 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             Pair(arrayOf(SqlToken.RC_OFFSET_OPTVAL), Importance.IsOptional),
             Pair(arrayOf(SqlToken.NUMBER), Importance.IsRequired),
             ),
-    SqlToken.OF to arrayOf(Pair(arrayOf(SqlToken.ANY_STR_SEQ), Importance.IsRequired)),
+    SqlToken.OF to arrayOf(Pair(arrayOf(SqlToken.TABLE_NAME), Importance.IsRequired)),
     SqlToken.LESS to arrayOf(Pair(arrayOf(SqlToken.EQUAL), Importance.IsOptional)),
     SqlToken.MORE to arrayOf(Pair(arrayOf(SqlToken.EQUAL), Importance.IsOptional)),
     SqlToken.FOR to
@@ -222,20 +276,33 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
     SqlToken.LIMIT to arrayOf(Pair(arrayOf(SqlToken.LIMIT_EXPR), Importance.IsRequired),),
     SqlToken.GROUP_BY_EXPR to
             arrayOf(
-            Pair(arrayOf(SqlToken.ANY_WORD, SqlToken.EXPR_SEQ, SqlToken.POSITION), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.GROUP_BY_EXPR), Importance.IsOptional),
+            Pair(arrayOf(SqlToken.COL_NAME_SEQ, SqlToken.POSITION_SEQ), Importance.IsRequired),
         ),
     SqlToken.GROUP_BY to
             arrayOf(
             Pair(arrayOf(SqlToken.GROUP_BY_EXPR), Importance.IsRequired),
             Pair(arrayOf(SqlToken.WITH_ROLLUP), Importance.IsOptional)),
     SqlToken.WHERE_CONDITION to arrayOf(Pair(arrayOf(SqlToken.EXPR_SEQ), Importance.IsRequired)),
+    SqlToken.SCOPED_COL_NAME to
+            arrayOf(
+                Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
+                Pair(arrayOf(SqlToken.COL_NAME), Importance.IsRequired),
+                Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
+            ),
+    SqlToken.CALC_EXPR to
+            arrayOf(
+                Pair(arrayOf(SqlToken.COUNT,SqlToken.MAX,SqlToken.MIN,SqlToken.SUM,SqlToken.AVG,), Importance.IsRequired),
+            ),
     SqlToken.COUNT to
             arrayOf(
-            Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
-        ),
+                Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
+                Pair(arrayOf(SqlToken.COL_NAME, SqlToken.WILDCARD), Importance.IsRequired),
+                Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
+            ),
+    SqlToken.MAX to arrayOf(Pair(arrayOf(SqlToken.SCOPED_COL_NAME), Importance.IsRequired),),
+    SqlToken.MIN to arrayOf(Pair(arrayOf(SqlToken.SCOPED_COL_NAME), Importance.IsRequired),),
+    SqlToken.SUM to arrayOf(Pair(arrayOf(SqlToken.SCOPED_COL_NAME), Importance.IsRequired),),
+    SqlToken.AVG to arrayOf(Pair(arrayOf(SqlToken.SCOPED_COL_NAME), Importance.IsRequired),),
     SqlToken.ORDER_BY_EXPR to
             arrayOf(
             Pair(arrayOf(SqlToken.COL_NAME, SqlToken.COUNT, SqlToken.POSITION), Importance.IsRequired),
@@ -267,12 +334,13 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
             Pair(arrayOf(SqlToken.SELECT), Importance.IsRequired),  //Going deeper at this very point
             Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
         ),
     SqlToken.PARTITION_LIST to arrayOf(),
     SqlToken.PARTITION to arrayOf(Pair(arrayOf(SqlToken.PARTITION_LIST), Importance.IsRequired)),
     SqlToken.FROM to
             arrayOf(
-            Pair(arrayOf(SqlToken.ANY_STR_SEQ, SqlToken.SUB_SELECT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.TABLE_NAME_SEQ, SqlToken.SUB_SELECT), Importance.IsRequired),
             Pair(arrayOf(SqlToken.PARTITION), Importance.IsOptional)
         ),
     SqlToken.SELECT to
@@ -284,7 +352,7 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             Pair(arrayOf(SqlToken.SQL_BUFFER_RESULT), Importance.IsOptional),
             Pair(arrayOf(SqlToken.SQL_NO_CACHE), Importance.IsOptional),
             Pair(arrayOf(SqlToken.SQL_CALC_FOUND_ROWS), Importance.IsOptional),
-            Pair(arrayOf(SqlToken.ANY_STR_SEQ, SqlToken.WILDCARD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COL_NAME_SEQ, SqlToken.WILDCARD), Importance.IsRequired),
             Pair(arrayOf(SqlToken.INTO_OPTION), Importance.IsOptional),
             Pair(arrayOf(SqlToken.FROM), Importance.IsOptional),
             Pair(arrayOf(SqlToken.WHERE), Importance.IsOptional),
@@ -300,12 +368,13 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
 
 class TokenKeeper(val token: SqlToken) {
     private lateinit var children: MutableList<TokenKeeper>
-    private lateinit var stringBody: String
+    var stringBody: Optional<String> = Optional.empty()
     fun set(s: String) {
         println("Set ${this.token} to $s")
-        stringBody = s
+        stringBody = Optional.of(s)
     }
-    fun get(): String {return stringBody}
+    fun get(): String {return stringBody.get()}
+    fun hasBody(): Boolean {return stringBody.isPresent}
 
     fun addChild(t: TokenKeeper) {
         children.add(t)
@@ -315,11 +384,23 @@ class TokenKeeper(val token: SqlToken) {
     }
     private fun toPrettyString(): String {
         return when (this.token.repr.r) {
-            Representation.None -> "--${this.token}"
-            Representation.Word -> this.get()
-            Representation.Same -> token.toString()
-            Representation.Str -> token.repr.get_str()
-            Representation.CommonCharacter -> this.get()
+                Representation.None -> "--${this.token}"
+                Representation.Word -> "${this.token}: ${this.get()}"
+                Representation.Number -> "${this.token}: ${this.get()}"
+                Representation.Same -> token.toString()
+                Representation.Str -> token.repr.get_str()
+                Representation.CommonCharacter -> "${this.token}: ${this.get()}"
+            }
+
+    }
+    private fun toSimpleString(): String {
+        return if (this.hasBody()) {
+            this.get()
+        } else {
+            when (this.token.repr.r) {
+                Representation.None -> ""
+                else -> this.toPrettyString()
+            }
         }
     }
     fun printAsATree(offset: Int){
@@ -329,12 +410,19 @@ class TokenKeeper(val token: SqlToken) {
         }
     }
 
+    private fun mustSkipThisSymbol(c: Char): Boolean {
+        return (c == ' '
+                && !arrayOf(Representation.CommonCharacter, Representation.None).contains(this.token.repr.r)
+                && this.token != SqlToken.ESCAPE)
+    }
+
     fun matchString(s: String, currentOffset: Int): Pair<Optional<TokenKeeper>, Int> {
         val tokensRange = currentOffset until s.length
-        print("Try to find ${this.token} in ${s.substring(tokensRange)}... ")
-        if(s[currentOffset] == ' ') return matchString(s, currentOffset+1) //Token can't start with space
+        print("Try to find ${this.token} in '${s.substring(tokensRange)}'... ")
         if(s.length <= currentOffset) return Pair(Optional.empty(), currentOffset)
-        var substring: String = ""
+        if(this.mustSkipThisSymbol(s[currentOffset]))
+            return matchString(s, currentOffset+1) //Token can't start with space
+        var substring: String
         return when(token.repr.r) {
             Representation.None -> {
                 println("going further with 'None' as $token.")
@@ -343,28 +431,37 @@ class TokenKeeper(val token: SqlToken) {
             Representation.CommonCharacter -> {
                 val currentCharacter = s[currentOffset]
                 return if(!"""\'""".contains(currentCharacter)){
-                    println("$currentCharacter detected as ${this.token}")
+                    println("'$currentCharacter' detected as ${this.token}")
                     this.set(currentCharacter.toString())
                     this.matchFollowers(s, currentOffset+1)
                 } else {
                     Pair(Optional.empty(), currentOffset)
                 }
             }
-            Representation.Word -> {
+            Representation.Word, Representation.Number -> {
+
+                val expression = when(token.repr.r) {
+                    Representation.Number -> "\\d+?".toRegex()
+                    Representation.Word -> "^(?!\\d|\\)|\\()\\w*?$".toRegex() //Col name can't start with digit
+                    else -> {
+                        throw Exception("Shouldn't be reached")
+                    }
+                }
+
                 var nextOffset = currentOffset+1
                 substring = s.substring(currentOffset until nextOffset)
-                val resInitial = substring.matches("\\w+?".toRegex())
+                val resInitial = substring.matches(expression)
                 var res = resInitial
                 while (nextOffset<s.length && res) {
                     nextOffset += 1
                     substring = s.substring(currentOffset until nextOffset)
-                    res = substring.matches("\\w+?".toRegex())
+                    res = substring.matches(expression)
                 }
-
-                nextOffset -= 1
-                substring = substring.substring(0 until substring.length-1)
-
                 return if(resInitial) {
+                    if(!res) {
+                        nextOffset -= 1
+                        substring = substring.substring(0 until substring.length - 1)
+                    }
                     println("$substring detected as ${this.token}")
                     this.set(substring)
                     this.matchFollowers(s, nextOffset)
@@ -398,7 +495,6 @@ class TokenKeeper(val token: SqlToken) {
         this.children = arrayListOf()
         var veryCurrentOffset = currentOffset
         val thisFollowers = Optional.ofNullable(allowedFollowers[this.token]).orElse(arrayOf())
-        if(s[currentOffset] == ' ') return matchFollowers(s, currentOffset+1) //Token can't start with space
         for((followers, importance) in thisFollowers) {
 
             val tokensRange = veryCurrentOffset until s.length
@@ -411,13 +507,9 @@ class TokenKeeper(val token: SqlToken) {
             val followersMatchResult = if (s.isNotEmpty()) {
                 var r: Pair<Optional<TokenKeeper>, Int> = Pair(Optional.empty(), veryCurrentOffset)
                 for(f in followers) {
-                    val vco = veryCurrentOffset
                     val ri = TokenKeeper(f).matchString(s, veryCurrentOffset)
                     if (ri.first.isPresent) {
                         val child = ri.first.get()
-                        //if(child.token == SqlToken.ANY_WORD) {
-                        //    child.set(s[vco])
-                       //}
                         this.addChild(child)
                         r = ri
                         break
@@ -436,21 +528,36 @@ class TokenKeeper(val token: SqlToken) {
                 break
             }
         }
+
+        if(this.token == SqlToken.QUOTED_STR) {
+            var r: ArrayList<String> = arrayListOf()
+            this.joinStrTokens(r)
+            this.set(r.joinToString(separator = ""))
+            this.children = listOf<TokenKeeper>().toMutableList()
+        }
+
         println("${this.token} ${mainres.isPresent} matched by followers. veryCurrentOffset = $veryCurrentOffset")
         return Pair(mainres, veryCurrentOffset)
+    }
+
+    private fun joinStrTokens(result: ArrayList<String>) {
+        val currentStr = this.toSimpleString()
+        result.add(currentStr)
+        for(child in this.children) {
+            child.joinStrTokens(result)
+        }
     }
 }
 
 fun main(args: Array<String>) {
     //val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia' and date > 0";
-    val queryString = """SELECT name, date FROM ( SELECT * FROM ( SELECT * FROM tutorials_tbl WHERE name = 'Vasia\'' ) WHERE date > 0 ) WHERE name = 'Vasia\\' and date > 0"""
-    val splittedQuery = queryString.split("( |\n|((?=,))|((?<=,))|((?='))|((?<=')))".toRegex())
-        .filter { ch -> ch.isNotEmpty() }
-        .toList()
-    println(splittedQuery.toString())
+    val queryString = """SELECT nm, dt FROM ( SELECT * FROM ( SELECT name AS nm, date AS dt FROM tutorials_tbl WHERE nm = 'Vasia \'' ORDER BY 2)qx WHERE date > 0 )qy WHERE name = 'Vasia\\' and date > 0 GROUP BY date HAVING date>400"""
     val res = TokenKeeper(SqlToken.SELECT).matchString(queryString, 0)
-    if (res.second < splittedQuery.size - 1){
-        throw Exception("Can't match string $queryString. Matched ${res.second} of ${splittedQuery.size} possible tokens")
+    if (res.second < queryString.length){
+        throw Exception("Can't match string $queryString. Matched ${res.second} of ${queryString.length} possible chars")
+    }
+    if (res.first.isEmpty){
+        throw Exception("Can't match string $queryString as an SQL query")
     }
     println("Result = $res")
     println("Query tree:")
