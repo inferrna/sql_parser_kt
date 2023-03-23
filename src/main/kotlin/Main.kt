@@ -569,14 +569,16 @@ class TokenKeeper(val token: SqlToken) {
 
             val followersMatchResult = if (s.isNotEmpty()) {
                 var r: Pair<Optional<TokenKeeper>, Int> = Pair(Optional.empty(), veryCurrentOffset)
-                for(f in followers) {
-                    val ri = TokenKeeper(f).matchString(s, veryCurrentOffset)
-                    if (ri.first.isPresent) {
-                        val child = ri.first.get()
-                        this.addChild(child)
-                        r = ri
-                        break
-                    }
+
+                val matchedFollowers = followers.map { f ->
+                    TokenKeeper(f).matchString(s, veryCurrentOffset)
+                }.filter { mayBeFollower -> mayBeFollower.first.isPresent }
+
+                if (matchedFollowers.isNotEmpty()) {
+                    val bestFollower = matchedFollowers.maxBy { matchedFollower -> matchedFollower.second }
+                    val child = bestFollower.first.get()
+                    this.addChild(child)
+                    r = bestFollower
                 }
                 r
             } else {
