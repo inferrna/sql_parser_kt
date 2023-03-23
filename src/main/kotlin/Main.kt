@@ -39,23 +39,33 @@ public class Representator (val r: Representation, val s: String?) {
 
 enum class SqlToken(public val repr: Representator) {
     WITH_ROLLUP(Representator.Str("WITH ROLLUP")),
+    ON(Representator.Same()),
+    LEFT(Representator.Same()),
+    RIGHT(Representator.Same()),
+    JOIN(Representator.Same()),
+    JOIN_EXPR_SEQ(Representator.None()),
     POSITION(Representator.Number()),
     COMMA(Representator.Str(",")),
     ESCAPE(Representator.Str("""\""")),
     ESCAPED_SPECIAL(Representator.None()),
     QUOTE(Representator.Str("'")),
+    POINT(Representator.Str(".")),
     COMMON_CHARACTER(Representator.CommonCharacter()),
     COMMON_STRING(Representator.None()),
     COUNT(Representator.Same()),
-    MAX(Representator.None()),
-    MIN(Representator.None()),
-    SUM(Representator.None()),
-    AVG(Representator.None()),
+    MAX(Representator.Same()),
+    MIN(Representator.Same()),
+    SUM(Representator.Same()),
+    AVG(Representator.Same()),
     SCOPED_COL_NAME(Representator.None()),
     COL_NAME(Representator.Word()),
+    COL_NAME_EXPR_SELECT(Representator.None()),
+    COL_NAME_NEXT_SELECT(Representator.None()),
+    COL_NAME_SEQ_SELECT(Representator.None()),
     COL_NAME_EXPR(Representator.None()),
     COL_NAME_NEXT(Representator.None()),
     COL_NAME_SEQ(Representator.None()),
+    TABLE_NAME_PREFIX(Representator.None()),
     TABLE_NAME(Representator.Word()),
     TABLE_NAME_NEXT(Representator.None()),
     TABLE_NAME_SEQ(Representator.None()),
@@ -72,6 +82,8 @@ enum class SqlToken(public val repr: Representator) {
     AND(Representator.Same()),
     OR(Representator.Same()),
     EXPR_PART(Representator.None()),
+    SCOPED_EXPR(Representator.None()),
+    BASE_EXPR(Representator.None()),
     EXPR(Representator.None()),
     EXPR_NEXT(Representator.None()),
     EXPR_SEQ(Representator.None()),
@@ -142,7 +154,8 @@ enum class SqlToken(public val repr: Representator) {
     ALL(Representator.Same()),
     SELECT(
         Representator.Same()
-    )
+    ),
+
 }
 val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = mapOf(
     SqlToken.ESCAPED_SPECIAL to
@@ -155,11 +168,22 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             Pair(arrayOf(SqlToken.ESCAPED_SPECIAL, SqlToken.COMMON_CHARACTER), Importance.IsRequired),
             Pair(arrayOf(SqlToken.COMMON_STRING), Importance.IsOptional),
         ),
+    SqlToken.TABLE_NAME_PREFIX to
+            arrayOf(
+            Pair(arrayOf(SqlToken.TABLE_NAME), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.POINT), Importance.IsRequired),
+        ),
     SqlToken.COL_NAME_EXPR to
             arrayOf(
+            Pair(arrayOf(SqlToken.TABLE_NAME_PREFIX), Importance.IsOptional),
             Pair(arrayOf(SqlToken.COL_NAME), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.AS_EXPR), Importance.IsOptional),
         ),
+    SqlToken.COL_NAME_EXPR_SELECT to
+                arrayOf(
+                Pair(arrayOf(SqlToken.TABLE_NAME_PREFIX), Importance.IsOptional),
+                Pair(arrayOf(SqlToken.COL_NAME), Importance.IsRequired),
+                Pair(arrayOf(SqlToken.AS_EXPR), Importance.IsOptional),
+            ),
     SqlToken.COL_NAME_NEXT to
             arrayOf(
             Pair(arrayOf(SqlToken.COMMA), Importance.IsRequired),
@@ -171,10 +195,21 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             Pair(arrayOf(SqlToken.COL_NAME_EXPR, SqlToken.EXPR_PART), Importance.IsRequired),
             Pair(arrayOf(SqlToken.COL_NAME_NEXT), Importance.IsOptional),
         ),
+    SqlToken.COL_NAME_NEXT_SELECT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.COMMA), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.EXPR_PART, SqlToken.COL_NAME_EXPR_SELECT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COL_NAME_NEXT_SELECT), Importance.IsOptional),
+        ),
+    SqlToken.COL_NAME_SEQ_SELECT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.EXPR_PART, SqlToken.COL_NAME_EXPR_SELECT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COL_NAME_NEXT_SELECT), Importance.IsOptional),
+        ),
     SqlToken.TABLE_NAME_NEXT to
             arrayOf(
             Pair(arrayOf(SqlToken.COMMA), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.TABLE_NAME, SqlToken.EXPR_PART), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.TABLE_NAME, SqlToken.EXPR_PART), Importance.IsRequired), //TODO : doubtful
             Pair(arrayOf(SqlToken.TABLE_NAME_NEXT), Importance.IsOptional),
         ),
     SqlToken.TABLE_NAME_SEQ to
@@ -201,13 +236,32 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
         ),
     SqlToken.EXPR_PART to
             arrayOf(
-                Pair(arrayOf(SqlToken.NUMBER, SqlToken.COL_NAME, SqlToken.QUOTED_STR, SqlToken.CALC_EXPR), Importance.IsRequired),
-            ),
-    SqlToken.EXPR to
+                Pair(arrayOf(SqlToken.NUMBER, SqlToken.CALC_EXPR, SqlToken.QUOTED_STR, SqlToken.COL_NAME_EXPR), Importance.IsRequired),
+                ),
+    SqlToken.SCOPED_EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.BASE_EXPR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
+        ),
+    SqlToken.BASE_EXPR to
             arrayOf(
             Pair(arrayOf(SqlToken.EXPR_PART), Importance.IsRequired),
             Pair(arrayOf(SqlToken.MORE_EQ,SqlToken.LESS_EQ,SqlToken.MORE,SqlToken.LESS,SqlToken.EQUAL), Importance.IsRequired),
             Pair(arrayOf(SqlToken.EXPR_PART), Importance.IsRequired),
+        ),
+    SqlToken.EXPR to
+            arrayOf(
+            Pair(arrayOf(SqlToken.BASE_EXPR, SqlToken.SCOPED_EXPR), Importance.IsRequired),
+        ),
+    SqlToken.JOIN_EXPR_SEQ to
+            arrayOf(
+            Pair(arrayOf(SqlToken.LEFT, SqlToken.RIGHT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.JOIN), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.TABLE_NAME), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ON), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.EXPR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.JOIN_EXPR_SEQ), Importance.IsOptional),
         ),
     SqlToken.AS_EXPR to
             arrayOf(
@@ -286,7 +340,7 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
     SqlToken.SCOPED_COL_NAME to
             arrayOf(
                 Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
-                Pair(arrayOf(SqlToken.COL_NAME), Importance.IsRequired),
+                Pair(arrayOf(SqlToken.COL_NAME_EXPR), Importance.IsRequired),
                 Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
             ),
     SqlToken.CALC_EXPR to
@@ -296,7 +350,7 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
     SqlToken.COUNT to
             arrayOf(
                 Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
-                Pair(arrayOf(SqlToken.COL_NAME, SqlToken.WILDCARD), Importance.IsRequired),
+                Pair(arrayOf(SqlToken.COL_NAME_EXPR, SqlToken.WILDCARD), Importance.IsRequired),
                 Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
             ),
     SqlToken.MAX to arrayOf(Pair(arrayOf(SqlToken.SCOPED_COL_NAME), Importance.IsRequired),),
@@ -341,6 +395,7 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
     SqlToken.FROM to
             arrayOf(
             Pair(arrayOf(SqlToken.TABLE_NAME_SEQ, SqlToken.SUB_SELECT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.JOIN_EXPR_SEQ), Importance.IsOptional),
             Pair(arrayOf(SqlToken.PARTITION), Importance.IsOptional)
         ),
     SqlToken.SELECT to
@@ -352,7 +407,7 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             Pair(arrayOf(SqlToken.SQL_BUFFER_RESULT), Importance.IsOptional),
             Pair(arrayOf(SqlToken.SQL_NO_CACHE), Importance.IsOptional),
             Pair(arrayOf(SqlToken.SQL_CALC_FOUND_ROWS), Importance.IsOptional),
-            Pair(arrayOf(SqlToken.COL_NAME_SEQ, SqlToken.WILDCARD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COL_NAME_SEQ_SELECT, SqlToken.WILDCARD), Importance.IsRequired),
             Pair(arrayOf(SqlToken.INTO_OPTION), Importance.IsOptional),
             Pair(arrayOf(SqlToken.FROM), Importance.IsOptional),
             Pair(arrayOf(SqlToken.WHERE), Importance.IsOptional),
@@ -551,7 +606,8 @@ class TokenKeeper(val token: SqlToken) {
 
 fun main(args: Array<String>) {
     //val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia' and date > 0";
-    val queryString = """SELECT nm, dt FROM ( SELECT * FROM ( SELECT name AS nm, date AS dt FROM tutorials_tbl WHERE nm = 'Vasia \'' ORDER BY 2)qx WHERE date > 0 )qy WHERE name = 'Vasia\\' and date > 0 GROUP BY date HAVING date>400"""
+    val queryString = args.getOrElse(0
+    ) { _: Int -> """SELECT nm, dt FROM ( SELECT * FROM ( SELECT name AS nm, date AS dt FROM tutorials_tbl WHERE nm = 'Vasia \'' ORDER BY 2)qx WHERE date > 0 )qy WHERE name = 'Vasia\\' and date > 0 GROUP BY date HAVING date>400""" }
     val res = TokenKeeper(SqlToken.SELECT).matchString(queryString, 0)
     if (res.second < queryString.length){
         throw Exception("Can't match string $queryString. Matched ${res.second} of ${queryString.length} possible chars")
