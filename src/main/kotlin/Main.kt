@@ -561,7 +561,7 @@ class TokenKeeper(val token: SqlToken) {
         for((followers, importance) in thisFollowers) {
 
             val tokensRange = veryCurrentOffset until s.length
-            println("${ANSI_PURPLE}looking in '${s.substring(tokensRange)}' for any of {${followers.map { f -> f.toString() }} as follower for ${this.token}. Offset = ${veryCurrentOffset}${ANSI_RESET}")
+            println("${ANSI_PURPLE}looking in '${s.substring(tokensRange)}' for any of ${followers.map { f -> f.toString() }} as follower for ${this.token}. Offset = ${veryCurrentOffset}${ANSI_RESET}")
             val fres = when(importance) {
                 Importance.IsRequired -> false
                 Importance.IsOptional -> true
@@ -577,6 +577,9 @@ class TokenKeeper(val token: SqlToken) {
                 if (matchedFollowers.isNotEmpty()) {
                     val bestFollower = matchedFollowers.maxBy { matchedFollower -> matchedFollower.second }
                     val child = bestFollower.first.get()
+                    val sz = matchedFollowers.size
+                    if(sz>1) println("${ANSI_RED}WARNING! FOUND $sz possible followers: ${matchedFollowers.map { ft -> ft.first.get().token.toString() }}.${ANSI_RESET}" +
+                                     " ${ANSI_GREEN}Best possible follower is ${child.token}${ANSI_RESET}")
                     this.addChild(child)
                     r = bestFollower
                 }
