@@ -15,7 +15,15 @@ enum class Representation {
     Number,
 }
 
+val ANSI_CYAN ="\u001B[36m"
+val ANSI_RED ="\u001B[31m"
+val ANSI_PURPLE = "\u001B[35m"
+val ANSI_GREEN ="\u001B[32m"
+val ANSI_RESET ="\u001B[0m"
+
+
 fun Boolean.toInt() = if (this) 1 else 0
+
 
 public class Representator (val r: Representation, val s: String?) {
     fun get(): Representation {
@@ -425,7 +433,7 @@ class TokenKeeper(val token: SqlToken) {
     private lateinit var children: MutableList<TokenKeeper>
     var stringBody: Optional<String> = Optional.empty()
     fun set(s: String) {
-        println("Set ${this.token} to $s")
+        println("Set ${this.token} to '$s'")
         stringBody = Optional.of(s)
     }
     fun get(): String {return stringBody.get()}
@@ -473,7 +481,7 @@ class TokenKeeper(val token: SqlToken) {
 
     fun matchString(s: String, currentOffset: Int): Pair<Optional<TokenKeeper>, Int> {
         val tokensRange = currentOffset until s.length
-        print("Try to find ${this.token} in '${s.substring(tokensRange)}'... ")
+        print("${ANSI_CYAN}Try to find ${this.token} in '${s.substring(tokensRange)}'... ${ANSI_RESET}")
         if(s.length <= currentOffset) return Pair(Optional.empty(), currentOffset)
         if(this.mustSkipThisSymbol(s[currentOffset]))
             return matchString(s, currentOffset+1) //Token can't start with space
@@ -517,7 +525,7 @@ class TokenKeeper(val token: SqlToken) {
                         nextOffset -= 1
                         substring = substring.substring(0 until substring.length - 1)
                     }
-                    println("$substring detected as ${this.token}")
+                    println("${ANSI_GREEN}$substring detected as ${this.token}${ANSI_RESET}")
                     this.set(substring)
                     this.matchFollowers(s, nextOffset)
                 } else {
@@ -536,7 +544,7 @@ class TokenKeeper(val token: SqlToken) {
                 val passedString = s.substring(currentOffset until endBound)
                 val equality = thisName.equals(passedString, true)
                 return if (equality) {
-                    println("$passedString == $thisName, ${this.token} detected")
+                    println("${ANSI_GREEN}$passedString == $thisName, ${this.token} detected${ANSI_RESET}")
                     matchFollowers(s, currentOffset+thisName.length)
                 } else {
                     println("none found.")
@@ -553,7 +561,7 @@ class TokenKeeper(val token: SqlToken) {
         for((followers, importance) in thisFollowers) {
 
             val tokensRange = veryCurrentOffset until s.length
-            println("    looking in '${s.substring(tokensRange)}' for any of {${followers.map { f -> f.toString() }} as follower for ${this.token}. Offset = $veryCurrentOffset")
+            println("${ANSI_PURPLE}looking in '${s.substring(tokensRange)}' for any of {${followers.map { f -> f.toString() }} as follower for ${this.token}. Offset = ${veryCurrentOffset}${ANSI_RESET}")
             val fres = when(importance) {
                 Importance.IsRequired -> false
                 Importance.IsOptional -> true
@@ -582,16 +590,21 @@ class TokenKeeper(val token: SqlToken) {
                 veryCurrentOffset = currentOffset
                 break
             }
+            if (veryCurrentOffset==s.length) {
+                break
+            }
         }
 
-        if(this.token == SqlToken.QUOTED_STR) {
+        if(this.token == SqlToken.QUOTED_STR && mainres.isPresent) {
             var r: ArrayList<String> = arrayListOf()
             this.joinStrTokens(r)
             this.set(r.joinToString(separator = ""))
             this.children = listOf<TokenKeeper>().toMutableList()
         }
 
-        println("${this.token} ${mainres.isPresent} matched by followers. veryCurrentOffset = $veryCurrentOffset")
+        val (color, word) = if (mainres.isPresent) Pair(ANSI_GREEN, "") else Pair(ANSI_RED, "not")
+
+        println("${color}${this.token} ${word} matched by followers. veryCurrentOffset = ${veryCurrentOffset}${ANSI_RESET}")
         return Pair(mainres, veryCurrentOffset)
     }
 
