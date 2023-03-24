@@ -20,6 +20,8 @@ val ANSI_RED ="\u001B[31m"
 val ANSI_PURPLE = "\u001B[35m"
 val ANSI_GREEN ="\u001B[32m"
 val ANSI_RESET ="\u001B[0m"
+val ANSI_WHITE = "\u001B[01m"
+val ANSI_YELLOW = "\u001B[33m"
 
 
 fun Boolean.toInt() = if (this) 1 else 0
@@ -466,6 +468,16 @@ fun checkWordIsASpecialSqlToken(word: String): Boolean {
     }
 }
 
+fun intoGreen(s: String): String {
+    return ANSI_GREEN+s+ANSI_RESET
+}
+fun intoWhite(s: String): String {
+    return ANSI_WHITE+s+ANSI_RESET
+}
+fun intoYellow(s: String): String {
+    return ANSI_YELLOW+s+ANSI_RESET
+}
+
 class TokenKeeper(val token: SqlToken) {
     private lateinit var children: MutableList<TokenKeeper>
     var stringBody: Optional<String> = Optional.empty()
@@ -484,12 +496,12 @@ class TokenKeeper(val token: SqlToken) {
     }
     private fun toPrettyString(): String {
         return when (this.token.repr.r) {
-                Representation.None -> "--${this.token}${if(this.hasBody()) ": ${this.get()}" else "" }"
-                Representation.Word -> "${this.token}: ${this.get()}"
-                Representation.Number -> "${this.token}: ${this.get()}"
-                Representation.Same -> token.toString()
-                Representation.Str -> token.repr.get_str()
-                Representation.CommonCharacter -> "${this.token}: ${this.get()}"
+                Representation.None -> "--${this.token}${if(this.hasBody()) ": ${intoGreen(this.get())}" else "" }"
+                Representation.Word -> "${this.token}: ${intoGreen(this.get())}"
+                Representation.Number -> "${this.token}: ${intoGreen(this.get())}"
+                Representation.Same -> intoWhite(token.toString())
+                Representation.Str -> intoYellow(token.repr.get_str())
+                Representation.CommonCharacter -> "${this.token}: ${intoGreen(this.get())}"
             }
 
     }
