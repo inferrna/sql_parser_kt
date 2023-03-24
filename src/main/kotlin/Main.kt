@@ -208,6 +208,7 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
         ),
     SqlToken.COL_NAME_EXPR_SELECT to
                 arrayOf(
+                Pair(arrayOf(SqlToken.DISTINCT), Importance.IsOptional),
                 Pair(arrayOf(SqlToken.TABLE_NAME_PREFIX), Importance.IsOptional),
                 Pair(arrayOf(SqlToken.COL_NAME, SqlToken.WILDCARD), Importance.IsRequired),
             ),
@@ -382,7 +383,7 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
     SqlToken.COUNT to
             arrayOf(
                 Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
-                Pair(arrayOf(SqlToken.COL_NAME_EXPR, SqlToken.WILDCARD), Importance.IsRequired),
+                Pair(arrayOf(SqlToken.COL_NAME_EXPR_SELECT, SqlToken.WILDCARD), Importance.IsRequired),
                 Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
             ),
     SqlToken.MAX to arrayOf(Pair(arrayOf(SqlToken.SCOPED_COL_NAME), Importance.IsRequired),),
@@ -391,7 +392,7 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
     SqlToken.AVG to arrayOf(Pair(arrayOf(SqlToken.SCOPED_COL_NAME), Importance.IsRequired),),
     SqlToken.ORDER_BY_EXPR to
             arrayOf(
-            Pair(arrayOf(SqlToken.COL_NAME, SqlToken.CALC_EXPR, SqlToken.POSITION), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COL_NAME_EXPR, SqlToken.CALC_EXPR, SqlToken.POSITION), Importance.IsRequired),
             Pair(arrayOf(SqlToken.ASC, SqlToken.DESC), Importance.IsOptional),
             Pair(arrayOf(SqlToken.ORDER_BY_EXPR), Importance.IsOptional),
         ),
