@@ -578,7 +578,7 @@ class TokenKeeper(val token: SqlToken) {
                     val bestFollower = matchedFollowers.maxBy { matchedFollower -> matchedFollower.second }
                     val child = bestFollower.first.get()
                     val sz = matchedFollowers.size
-                    if(sz>1) println("${ANSI_RED}WARNING! FOUND $sz possible followers: ${matchedFollowers.map { ft -> ft.first.get().token.toString() }}.${ANSI_RESET}" +
+                    if(sz>1) println("${ANSI_RED}WARNING! FOUND $sz possible followers for ${this.token}: ${matchedFollowers.map { ft -> ft.first.get().token.toString() }}.${ANSI_RESET}" +
                                      " ${ANSI_GREEN}Best possible follower is ${child.token}${ANSI_RESET}")
                     this.addChild(child)
                     r = bestFollower
