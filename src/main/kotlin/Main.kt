@@ -66,10 +66,12 @@ enum class SqlToken(public val repr: Representator) {
     SUM(Representator.Same()),
     AVG(Representator.Same()),
     SCOPED_COL_NAME(Representator.None()),
+    FUNCTION_CALL(Representator.None()),
     COL_NAME(Representator.Word()),
     COL_NAME_EXPR_SELECT(Representator.None()),
     COL_NAME_NEXT_SELECT(Representator.None()),
     COL_NAME_SEQ_SELECT(Representator.None()),
+    ITEM_TO_SELECT(Representator.None()),
     COL_NAME_EXPR(Representator.None()),
     COL_NAME_NEXT(Representator.None()),
     COL_NAME_SEQ(Representator.None()),
@@ -176,10 +178,22 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             Pair(arrayOf(SqlToken.ESCAPED_SPECIAL, SqlToken.COMMON_CHARACTER), Importance.IsRequired),
             Pair(arrayOf(SqlToken.COMMON_STRING), Importance.IsOptional),
         ),
+    SqlToken.FUNCTION_CALL to
+            arrayOf(
+            Pair(arrayOf(SqlToken.ANY_WORD), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.SC_LEFT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.COL_NAME_SEQ_SELECT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.SC_RIGHT), Importance.IsRequired),
+        ),
     SqlToken.TABLE_NAME_PREFIX to
             arrayOf(
             Pair(arrayOf(SqlToken.TABLE_NAME), Importance.IsRequired),
             Pair(arrayOf(SqlToken.POINT), Importance.IsRequired),
+        ),
+    SqlToken.ITEM_TO_SELECT to
+            arrayOf(
+            Pair(arrayOf(SqlToken.EXPR_PART, SqlToken.COL_NAME_EXPR), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.AS_EXPR), Importance.IsOptional),
         ),
     SqlToken.COL_NAME_EXPR to
             arrayOf(
@@ -190,7 +204,6 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
                 arrayOf(
                 Pair(arrayOf(SqlToken.TABLE_NAME_PREFIX), Importance.IsOptional),
                 Pair(arrayOf(SqlToken.COL_NAME), Importance.IsRequired),
-                Pair(arrayOf(SqlToken.AS_EXPR), Importance.IsOptional),
             ),
     SqlToken.COL_NAME_NEXT to
             arrayOf(
@@ -206,12 +219,12 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
     SqlToken.COL_NAME_NEXT_SELECT to
             arrayOf(
             Pair(arrayOf(SqlToken.COMMA), Importance.IsRequired),
-            Pair(arrayOf(SqlToken.EXPR_PART, SqlToken.COL_NAME_EXPR_SELECT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ITEM_TO_SELECT), Importance.IsRequired),
             Pair(arrayOf(SqlToken.COL_NAME_NEXT_SELECT), Importance.IsOptional),
         ),
     SqlToken.COL_NAME_SEQ_SELECT to
             arrayOf(
-            Pair(arrayOf(SqlToken.EXPR_PART, SqlToken.COL_NAME_EXPR_SELECT), Importance.IsRequired),
+            Pair(arrayOf(SqlToken.ITEM_TO_SELECT), Importance.IsRequired),
             Pair(arrayOf(SqlToken.COL_NAME_NEXT_SELECT), Importance.IsOptional),
         ),
     SqlToken.SELECT_SOURCE_NEXT to
@@ -353,7 +366,7 @@ val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = 
             ),
     SqlToken.CALC_EXPR to
             arrayOf(
-                Pair(arrayOf(SqlToken.COUNT,SqlToken.MAX,SqlToken.MIN,SqlToken.SUM,SqlToken.AVG,), Importance.IsRequired),
+                Pair(arrayOf(SqlToken.COUNT,SqlToken.MAX,SqlToken.MIN,SqlToken.SUM,SqlToken.AVG, SqlToken.FUNCTION_CALL), Importance.IsRequired),
             ),
     SqlToken.COUNT to
             arrayOf(
@@ -447,7 +460,7 @@ class TokenKeeper(val token: SqlToken) {
     }
     private fun toPrettyString(): String {
         return when (this.token.repr.r) {
-                Representation.None -> "--${this.token}"
+                Representation.None -> "--${this.token}${if(this.hasBody()) ": ${this.get()}" else "" }"
                 Representation.Word -> "${this.token}: ${this.get()}"
                 Representation.Number -> "${this.token}: ${this.get()}"
                 Representation.Same -> token.toString()
