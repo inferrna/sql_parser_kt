@@ -618,10 +618,6 @@ class TokenKeeper(val token: SqlToken) {
 
             val tokensRange = veryCurrentOffset until s.length
             println("${ANSI_PURPLE}looking in '${s.substring(tokensRange)}' for any of ${followers.map { f -> f.toString() }} as follower for ${this.token}. Offset = ${veryCurrentOffset}${ANSI_RESET}")
-            val fres = when(importance) {
-                Importance.IsRequired -> false
-                Importance.IsOptional -> true
-            }
 
             val followersMatchResult = if (s.isNotEmpty()) {
                 var r: Pair<Optional<TokenKeeper>, Int> = Pair(Optional.empty(), veryCurrentOffset)
@@ -645,7 +641,7 @@ class TokenKeeper(val token: SqlToken) {
             }
             veryCurrentOffset = followersMatchResult.second
 
-            val keepDoing = mainres.isPresent && (followersMatchResult.first.isPresent || fres)
+            val keepDoing = followersMatchResult.first.isPresent || importance == Importance.IsOptional
             if (!keepDoing) {
                 mainres = Optional.empty()
                 veryCurrentOffset = currentOffset
@@ -657,7 +653,7 @@ class TokenKeeper(val token: SqlToken) {
         }
 
         if(this.token == SqlToken.QUOTED_STR && mainres.isPresent) {
-            var r: ArrayList<String> = arrayListOf()
+            val r: ArrayList<String> = arrayListOf()
             this.joinStrTokens(r)
             this.set(r.joinToString(separator = ""))
             this.children = listOf<TokenKeeper>().toMutableList()
