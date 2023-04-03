@@ -1,5 +1,6 @@
-import java.util.Optional
+import java.util.*
 import java.util.stream.Stream
+import kotlin.collections.ArrayList
 
 enum class Importance {
     IsRequired,
@@ -173,6 +174,7 @@ enum class SqlToken(public val repr: Representator) {
     SELECT(
         Representator.Same()
     ),
+    NONE(Representator.None()),
 
 }
 val allowedFollowers: Map<SqlToken, Array<Pair<Array<SqlToken>, Importance>>> = mapOf(
@@ -528,24 +530,27 @@ class TokenKeeper(val token: SqlToken) {
                 && this.token != SqlToken.ESCAPE)
     }
 
-    fun matchString(s: String, currentOffset: Int): Pair<Optional<TokenKeeper>, Int> {
+    fun matchString(s: String, currentOffset: Int, ancestors: Stack<SqlToken>): Pair<Optional<TokenKeeper>, Int> {
         val tokensRange = currentOffset until s.length
-        print("${ANSI_CYAN}Try to find ${this.token} in '${s.substring(tokensRange)}'... ${ANSI_RESET}")
+
+        val ancestorsStr = ancestors.joinToString(separator = "->")
+
         if(s.length <= currentOffset) return Pair(Optional.empty(), currentOffset)
         if(this.mustSkipThisSymbol(s[currentOffset]))
-            return matchString(s, currentOffset+1) //Token can't start with space
+            return matchString(s, currentOffset+1, ancestors) //Token can't start with space
+        print("$ancestorsStr: ${ANSI_CYAN}Try to find ${this.token} in '${s.substring(tokensRange)}'... ${ANSI_RESET}")
         var substring: String
         return when(token.repr.r) {
             Representation.None -> {
-                println("going further with 'None' as $token.")
-                this.matchFollowers(s, currentOffset)
+                println("$ancestorsStr: going further with 'None' as $token.")
+                this.matchFollowers(s, currentOffset, ancestors)
             }
             Representation.CommonCharacter -> {
                 val currentCharacter = s[currentOffset]
                 return if(!"""\'""".contains(currentCharacter)){
-                    println("'$currentCharacter' detected as ${this.token}")
+                    println("$ancestorsStr: '$currentCharacter' detected as ${this.token}")
                     this.set(currentCharacter.toString())
-                    this.matchFollowers(s, currentOffset+1)
+                    this.matchFollowers(s, currentOffset+1, ancestors)
                 } else {
                     Pair(Optional.empty(), currentOffset)
                 }
@@ -581,9 +586,9 @@ class TokenKeeper(val token: SqlToken) {
                     false
                 }
                 return if(resEnding) {
-                    println("${ANSI_GREEN}$substring detected as ${this.token}${ANSI_RESET}")
+                    println("$ancestorsStr: ${ANSI_GREEN}$substring detected as ${this.token}${ANSI_RESET}")
                     this.set(substring)
-                    this.matchFollowers(s, nextOffset)
+                    this.matchFollowers(s, nextOffset, ancestors)
                 } else {
                     Pair(Optional.empty(), currentOffset)
                 }
@@ -600,8 +605,8 @@ class TokenKeeper(val token: SqlToken) {
                 val passedString = s.substring(currentOffset until endBound)
                 val equality = thisName.equals(passedString, true)
                 return if (equality) {
-                    println("${ANSI_GREEN}$passedString == $thisName, ${this.token} detected${ANSI_RESET}")
-                    matchFollowers(s, currentOffset+thisName.length)
+                    println("$ancestorsStr: ${ANSI_GREEN}$passedString == $thisName, ${this.token} detected${ANSI_RESET}")
+                    matchFollowers(s, currentOffset+thisName.length, ancestors)
                 } else {
                     println("none found.")
                     Pair(Optional.empty(), currentOffset)
@@ -609,28 +614,45 @@ class TokenKeeper(val token: SqlToken) {
             }
         }
     }
-    private fun matchFollowers(s: String, currentOffset: Int): Pair<Optional<TokenKeeper>, Int> {
+    private fun matchFollowers(s: String, currentOffset: Int, ancestors: Stack<SqlToken>): Pair<Optional<TokenKeeper>, Int> {
         var mainres: Optional<TokenKeeper> = Optional.of(this)
         this.children = arrayListOf()
         var veryCurrentOffset = currentOffset
         val thisFollowers = Optional.ofNullable(allowedFollowers[this.token]).orElse(arrayOf())
+
+        ancestors.push(this.token) //Advance add,  remove on fail
+
+        val ancestorsStr = ancestors.fold(Triple(SqlToken.NONE, 1,""))
+        { (t, c, s), nt ->
+            if(t==nt) {
+                val nc = c+1
+                Triple(nt, nc, s)//Skip same token
+            } else {
+                if (c > 1) {
+                    Triple(nt, 1, "$s($c)->$t") //Count of previous
+                } else {
+                    Triple(nt, 1, "$s->$t")//New token
+                }
+            }
+        }.third.replaceFirst("->", "")
+
         for((followers, importance) in thisFollowers) {
 
             val tokensRange = veryCurrentOffset until s.length
-            println("${ANSI_PURPLE}looking in '${s.substring(tokensRange)}' for any of ${followers.map { f -> f.toString() }} as follower for ${this.token}. Offset = ${veryCurrentOffset}${ANSI_RESET}")
+            println("${ancestorsStr}: ${ANSI_PURPLE}looking in '${s.substring(tokensRange)}' for any of ${followers.map { f -> f.toString() }} as follower for ${this.token}. Offset = ${veryCurrentOffset}${ANSI_RESET}")
 
             val followersMatchResult = if (s.isNotEmpty()) {
                 var r: Pair<Optional<TokenKeeper>, Int> = Pair(Optional.empty(), veryCurrentOffset)
 
                 val matchedFollowers = followers.map { f ->
-                    TokenKeeper(f).matchString(s, veryCurrentOffset)
+                    TokenKeeper(f).matchString(s, veryCurrentOffset, ancestors)
                 }.filter { mayBeFollower -> mayBeFollower.first.isPresent }
 
                 if (matchedFollowers.isNotEmpty()) {
                     val bestFollower = matchedFollowers.maxBy { matchedFollower -> matchedFollower.second }
                     val child = bestFollower.first.get()
                     val sz = matchedFollowers.size
-                    if(sz>1) println("${ANSI_RED}WARNING! FOUND $sz possible followers for ${this.token}: ${matchedFollowers.map { ft -> ft.first.get().token.toString() }}.${ANSI_RESET}" +
+                    if(sz>1) println("${ancestorsStr}:${ANSI_RED}WARNING! FOUND $sz possible followers for ${this.token}: ${matchedFollowers.map { ft -> ft.first.get().token.toString() }}.${ANSI_RESET}" +
                                      " ${ANSI_GREEN}Best possible follower is ${child.token}${ANSI_RESET}")
                     this.addChild(child)
                     r = bestFollower
@@ -661,7 +683,8 @@ class TokenKeeper(val token: SqlToken) {
 
         val (color, word) = if (mainres.isPresent) Pair(ANSI_GREEN, "") else Pair(ANSI_RED, "not")
 
-        println("${color}${this.token} ${word} matched by followers. veryCurrentOffset = ${veryCurrentOffset}${ANSI_RESET}")
+        println("${ancestorsStr}: ${color}${this.token} ${word} matched by followers. veryCurrentOffset = ${veryCurrentOffset}${ANSI_RESET}")
+        ancestors.pop()
         return Pair(mainres, veryCurrentOffset)
     }
 
@@ -678,7 +701,7 @@ fun main(args: Array<String>) {
     //val queryString = "SELECT name, date FROM tutorials_tbl WHERE name = 'Vasia' and date > 0";
     val queryString = args.getOrElse(0
     ) { _: Int -> """SELECT nm, dt FROM ( SELECT * FROM ( SELECT name AS nm, date AS dt FROM tutorials_tbl WHERE nm = 'Vasia \'' ORDER BY 2)qx WHERE date > 0 )qy WHERE name = 'Vasia\\' and date > 0 GROUP BY date HAVING date>400""" }
-    val res = TokenKeeper(SqlToken.SELECT).matchString(queryString, 0)
+    val res = TokenKeeper(SqlToken.SELECT).matchString(queryString, 0, Stack())
     if (res.second < queryString.length){
         throw Exception("Can't match string $queryString. Matched ${res.second} of ${queryString.length} possible chars")
     }
